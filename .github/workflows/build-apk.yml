@@ -54,20 +54,52 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build APK
+      - name: Compile Android project
+        id: compile
+        continue-on-error: true
         shell: bash
-        run: gradle --no-daemon --stacktrace clean assembleDebug
+        run: |
+          set +e
+          gradle --no-daemon --stacktrace clean assembleDebug > build.log 2>&1
+          status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          {
+            echo "=== COMPILER ERROR SUMMARY ==="
+            grep -nE "error:|FAILURE:|What went wrong|Execution failed|Caused by:|Android resource linking failed|AAPT|Could not" build.log | tail -n 240 || true
+            echo "=== FINAL 320 LOG LINES ==="
+            tail -n 320 build.log
+          } > build-summary.txt
+          cat build-summary.txt
+          exit 0
 
       - name: Verify APK
+        if: steps.compile.outputs.status == '0'
         shell: bash
         run: |
           test -s app/build/outputs/apk/debug/app-debug.apk
           ls -lh app/build/outputs/apk/debug/app-debug.apk
 
       - name: Upload APK artifact
+        if: steps.compile.outputs.status == '0'
         uses: actions/upload-artifact@v4
         with:
           name: Ondskabens-Skov-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ondskabens-Skov-Build-Diagnostics
+          path: |
+            build.log
+            build-summary.txt
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Fail when compilation failed
+        if: steps.compile.outputs.status != '0'
+        shell: bash
+        run: exit 1
