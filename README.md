@@ -24,6 +24,8 @@ GitHub Actions bygger en signeret **debug-APK**, som kan installeres direkte på
 
 Debug-signaturen gør APK'en installerbar uden Android Studio. Den er ikke en Play Store-produktionssignatur.
 
+Ved en compilerfejl uploader workflowet også `Ondskabens-Skov-Build-Diagnostics` med komplet Gradle-log og en koncentreret fejlsammenfatning.
+
 ## Projektstruktur
 
 Selve Android-projektet er komprimeret og fordelt i `source/chunk-00.b64` til `source/chunk-04.b64`, så repository-integrationen kan overføre hele projektet uden binær filupload. Build-workflowet samler automatisk delene, udpakker projektet og kompilerer APK'en.
