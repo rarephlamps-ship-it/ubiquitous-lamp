@@ -29,9 +29,11 @@ jobs:
               source/chunk-04.b64 > project.tar.gz.b64
           base64 --decode project.tar.gz.b64 > project.tar.gz
           tar -xzf project.tar.gz
+          python3 source/apply-fixes.py
           test -f settings.gradle
           test -f app/build.gradle
           test -f app/src/main/AndroidManifest.xml
+          grep -q "private void showMessage(String text, float seconds)" app/src/main/java/dk/ruko/ondskabensskov/GameView.java
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
