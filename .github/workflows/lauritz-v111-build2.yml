@@ -28,7 +28,7 @@ jobs:
           base64 --decode lauritz-build/v11.patch.xz.b64 > v11.patch.xz
           echo "73f015276c11fba3bdb2cbc37827977f5ec251e17fcfb787bb525a819046c40b  v11.patch.xz" | sha256sum -c -
           base64 --decode lauritz-build/v111.patch.xz.b64 > v111.patch.xz
-          echo "c3026510060b983ccccf08346783e234cb039107dc1a59def0f8e40bcef4a6b3  v111.patch.xz" | sha256sum -c -
+          echo "bdb825e2892644e3b4118736fa06a3f44a700d49c7cef2ce47aa7716e6ecc5d6  v111.patch.xz" | sha256sum -c -
           xz -dc v11.patch.xz > v11.patch
           xz -dc v111.patch.xz > v111.patch
           rm -rf lauritz-app && mkdir lauritz-app
