@@ -19,7 +19,7 @@ concurrency:
 jobs:
   build:
     name: Reconstruct, test and build installable APK
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
 
     steps:
@@ -43,38 +43,88 @@ jobs:
           grep -q '^version = 2.0.0$' work/deepcrawler_android/buildozer.spec
           grep -q '^android.api = 35$' work/deepcrawler_android/buildozer.spec
           grep -q '^android.minapi = 24$' work/deepcrawler_android/buildozer.spec
+          grep -q '^android.ndk = 28c$' work/deepcrawler_android/buildozer.spec
           grep -q '^android.accept_sdk_license = True$' work/deepcrawler_android/buildozer.spec
 
-      - name: Set up Python 3.12 for pre-build tests
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Buildozer system dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            git zip unzip python3-pip python3-virtualenv \
+            autoconf libtool pkg-config zlib1g-dev \
+            libncurses5-dev libncursesw5-dev libtinfo6 \
+            cmake libffi-dev libssl-dev automake autopoint gettext ccache
+          java -version
+          javac -version
+
+      - name: Ensure Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v rustc >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          fi
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          if [ -f "$HOME/.cargo/env" ]; then . "$HOME/.cargo/env"; fi
+          rustc --version
+          cargo --version
+
+      - name: Install Buildozer 1.6.0 and Python build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip wheel
+          python -m pip install "buildozer==1.6.0" setuptools "cython==0.29.34" virtualenv pytest requests beautifulsoup4
+          buildozer --version
+          cython --version
 
       - name: Run release gate
         working-directory: work/deepcrawler_android
         shell: bash
         run: |
           set -euo pipefail
-          python -m pip install --upgrade pip
-          python -m pip install pytest requests beautifulsoup4
           python -m pytest -q
           python -m compileall -q main.py deepcrawler
 
-      - name: Build DeepCrawler with Buildozer 1.6.0
-        id: buildozer
-        uses: ArtemSBulgakov/buildozer-action@v1.2.0
-        with:
-          repository_root: .
-          workdir: work/deepcrawler_android
-          buildozer_version: 1.6.0
-          command: buildozer android debug
+      - name: Build DeepCrawler directly with Buildozer
+        id: android-build
+        continue-on-error: true
+        working-directory: work/deepcrawler_android
+        shell: bash
+        run: |
+          set -o pipefail
+          if [ -f "$HOME/.cargo/env" ]; then . "$HOME/.cargo/env"; fi
+          buildozer -v android debug 2>&1 | tee "$GITHUB_WORKSPACE/buildozer.log"
 
-      - name: Set up Java 17 for APK verification
-        uses: actions/setup-java@v4
+      - name: Upload Buildozer diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          distribution: temurin
-          java-version: "17"
+          name: DeepCrawler-build-diagnostics
+          path: |
+            buildozer.log
+            work/deepcrawler_android/.buildozer/android/platform/**/*.log
+            work/deepcrawler_android/.buildozer/android/platform/**/build/reports/**
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Fail when Android compilation failed
+        if: steps.android-build.outcome == 'failure'
+        shell: bash
+        run: exit 1
 
       - name: Set up Android verification tools
         uses: android-actions/setup-android@v3
@@ -124,14 +174,3 @@ jobs:
             apk-badging.txt
           if-no-files-found: error
           retention-days: 30
-
-      - name: Upload diagnostics on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: DeepCrawler-build-diagnostics
-          path: |
-            work/deepcrawler_android/.buildozer/android/platform/**/*.log
-            work/deepcrawler_android/.buildozer/android/platform/**/build/reports/**
-          if-no-files-found: warn
-          retention-days: 7
