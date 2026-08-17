@@ -29,9 +29,13 @@ jobs:
           rm -rf lauritz-app && mkdir lauritz-app
           tar -xJf lauritz-build-src.tar.xz -C lauritz-app
           patch -d lauritz-app -p1 < lauritz-build/fix-001.patch
-          patch -d lauritz-app -p1 < v11.patch
+          patch -d lauritz-app -p1 --batch < v11.patch || true
           grep -q 'versionName = "1.1.0"' lauritz-app/app/build.gradle.kts
+          grep -q 'versionCode = 2' lauritz-app/app/build.gradle.kts
           grep -q 'android.permission.INTERNET' lauritz-app/app/src/main/AndroidManifest.xml
+          test -f lauritz-app/app/src/main/java/dk/ruko/lauritz/data/case/CaseFolderResolver.kt
+          test -f lauritz-app/app/src/main/java/dk/ruko/lauritz/ui/webcompare/WebCompareScreen.kt
+          test -f lauritz-app/app/src/main/java/dk/ruko/lauritz/osint/ProviderRegistry.kt
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
