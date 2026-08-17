@@ -53,10 +53,14 @@ jobs:
           grep -q 'versionName = "1.1.1"' lauritz-app/app/build.gradle.kts
           grep -q 'versionCode = 3' lauritz-app/app/build.gradle.kts
 
-      - uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '17'
+      - name: Use preinstalled Java 17
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${JAVA_HOME_17_X64:-}"
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_17_X64/bin" >> "$GITHUB_PATH"
+          "$JAVA_HOME_17_X64/bin/java" -version
 
       - uses: android-actions/setup-android@v3
 
