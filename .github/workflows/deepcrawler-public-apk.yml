@@ -91,7 +91,7 @@ jobs:
           buildozer --version
           cython --version
 
-      - name: Pin and patch python-for-android multi-ABI venv handling
+      - name: Pin stable p4a and deterministic pure-Python HTTP dependency
         shell: bash
         run: |
           set -euo pipefail
@@ -114,6 +114,12 @@ jobs:
 
           spec = Path("work/deepcrawler_android/buildozer.spec")
           s = spec.read_text(encoding="utf-8")
+          old_req = "requirements = python3,kivy,requests,beautifulsoup4"
+          new_req = "requirements = python3,kivy,requests,beautifulsoup4,charset-normalizer==3.4.9"
+          if s.count(old_req) != 1:
+              raise SystemExit("Unexpected Buildozer requirements line")
+          s = s.replace(old_req, new_req, 1)
+
           marker = "\n[buildozer]\n"
           if marker not in s:
               raise SystemExit("Missing [buildozer] section")
@@ -125,6 +131,7 @@ jobs:
           grep -Fq "shprint(host_python, '-m', 'venv', '--clear', 'venv')" p4a/pythonforandroid/build.py
           ! grep -Fq "shprint(host_python, '-m', 'venv', 'venv')" p4a/pythonforandroid/build.py
           grep -q '^p4a.source_dir = ' work/deepcrawler_android/buildozer.spec
+          grep -q '^requirements = python3,kivy,requests,beautifulsoup4,charset-normalizer==3.4.9$' work/deepcrawler_android/buildozer.spec
           git -C p4a diff --check
           git -C p4a diff -- pythonforandroid/build.py
 
