@@ -23,6 +23,7 @@ jobs:
           base64 --decode lauritz-build/source.b64 > lauritz-build-src.tar.xz
           echo "d01cbddb6e3a7f45a9ebb2a79e2ff1de285b89c09a71261ac4a2177a2d35e9e0  lauritz-build-src.tar.xz" | sha256sum -c -
           echo "cb94ee5db7defb38406ffefd1fea52c896b9fdec1a829bcd48dd435f67c437db  lauritz-build/fix-001.patch" | sha256sum -c -
+          echo "cfe1666f23b799f5e7947315fa7dbd4fed0960b6b7bd9f4f0ded235a0215f465  lauritz-build/fix-v11-001.patch" | sha256sum -c -
           base64 --decode lauritz-build/v11.patch.xz.b64 > v11.patch.xz
           echo "73f015276c11fba3bdb2cbc37827977f5ec251e17fcfb787bb525a819046c40b  v11.patch.xz" | sha256sum -c -
           xz -dc v11.patch.xz > v11.patch
@@ -30,6 +31,7 @@ jobs:
           tar -xJf lauritz-build-src.tar.xz -C lauritz-app
           patch -d lauritz-app -p1 < lauritz-build/fix-001.patch
           patch -d lauritz-app -p1 --batch < v11.patch || true
+          patch -d lauritz-app -p1 < lauritz-build/fix-v11-001.patch
           grep -q 'versionName = "1.1.0"' lauritz-app/app/build.gradle.kts
           grep -q 'versionCode = 2' lauritz-app/app/build.gradle.kts
           grep -q 'android.permission.INTERNET' lauritz-app/app/src/main/AndroidManifest.xml
