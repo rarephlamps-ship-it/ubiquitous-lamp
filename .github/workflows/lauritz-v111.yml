@@ -20,6 +20,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          echo "39d05b9840b0d50c1eeafb2f38c648e8b57f105aab133fa6d4bebab8338246fc  lauritz-v111/v11src.part00" | sha256sum -c -
+          echo "730843b42deb241be1de94d28d43d9d309d2a9ecced68d2ed13811579c3c668e  lauritz-v111/v11src.rest00" | sha256sum -c -
+          echo "6a286360df4ac909b9c493289c78c492dc212be6cfa379fa86a00ea205327173  lauritz-v111/v11src.rest01" | sha256sum -c -
+          echo "145db43750aca1e66136dc1fa89b214de27d1a3ce95a64b141e7b3cf281ec47f  lauritz-v111/v11src.pair02" | sha256sum -c -
+          echo "4b387ad79e0f49dfcdef367b6e315d7568915cc40973238a8f1d957988b5c1fe  lauritz-v111/v11src.pair04" | sha256sum -c -
+          echo "2861b4fe2d99f2d70e3cfce3be3108b10216fb0620939922f25b7231bf7abd12  lauritz-v111/v11src.pair06" | sha256sum -c -
+          echo "6e7fba6b0972dde85e192051d75c32590be0eab61ee670d16a4c9af0ab08d3ac  lauritz-v111/v11src.pair08" | sha256sum -c -
+          echo "eebe20f30616df8136dfda6d54cf46ee1834a1c3269c8e23d24572cef53f6cbf  lauritz-v111/v11src.pair10" | sha256sum -c -
+          echo "46b4ad36771463887c070439f73fbe49f0f762c5da2df3e6209400f13f899010  lauritz-v111/v11src.pair12" | sha256sum -c -
+          echo "f1ef3f615221bf179153bfdfc60ee2ca40350068faa48a022d73f5f0ebba7cc4  lauritz-v111/v11src.pair14" | sha256sum -c -
           cat lauritz-v111/v11src.part00 \
               lauritz-v111/v11src.rest00 \
               lauritz-v111/v11src.rest01 \
