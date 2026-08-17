@@ -32,8 +32,8 @@ jobs:
           rm -rf lauritz-app
           mkdir lauritz-app
           tar -xJf lauritz-build-src.tar.xz -C lauritz-app
-          git -C lauritz-app apply --check ../lauritz-build/fix-001.patch
-          git -C lauritz-app apply ../lauritz-build/fix-001.patch
+          patch -d lauritz-app -p1 --dry-run < lauritz-build/fix-001.patch
+          patch -d lauritz-app -p1 < lauritz-build/fix-001.patch
           grep -q 'import androidx.compose.ui.unit.dp' lauritz-app/app/src/main/java/dk/ruko/lauritz/ui/navigation/AppNavigation.kt
           test -f lauritz-app/settings.gradle.kts
           test -f lauritz-app/build.gradle.kts
