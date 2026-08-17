@@ -91,6 +91,43 @@ jobs:
           buildozer --version
           cython --version
 
+      - name: Pin and patch python-for-android multi-ABI venv handling
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf p4a
+          git clone --filter=blob:none https://github.com/kivy/python-for-android.git p4a
+          git -C p4a checkout --detach 58d21141f17c889bf8585f5665921d72028f8831
+          test "$(git -C p4a rev-parse HEAD)" = "58d21141f17c889bf8585f5665921d72028f8831"
+
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path("p4a/pythonforandroid/build.py")
+          text = p.read_text(encoding="utf-8")
+          old = "shprint(host_python, '-m', 'venv', 'venv')"
+          new = "shprint(host_python, '-m', 'venv', '--clear', 'venv')"
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f"Expected exactly one p4a venv creation site, found {count}")
+          p.write_text(text.replace(old, new), encoding="utf-8")
+
+          spec = Path("work/deepcrawler_android/buildozer.spec")
+          s = spec.read_text(encoding="utf-8")
+          marker = "\n[buildozer]\n"
+          if marker not in s:
+              raise SystemExit("Missing [buildozer] section")
+          p4a_path = str(Path("p4a").resolve())
+          s = s.replace(marker, f"\np4a.source_dir = {p4a_path}\n{marker}", 1)
+          spec.write_text(s, encoding="utf-8")
+          PY
+
+          grep -Fq "shprint(host_python, '-m', 'venv', '--clear', 'venv')" p4a/pythonforandroid/build.py
+          ! grep -Fq "shprint(host_python, '-m', 'venv', 'venv')" p4a/pythonforandroid/build.py
+          grep -q '^p4a.source_dir = ' work/deepcrawler_android/buildozer.spec
+          git -C p4a diff --check
+          git -C p4a diff -- pythonforandroid/build.py
+
       - name: Run release gate
         working-directory: work/deepcrawler_android
         shell: bash
@@ -99,9 +136,7 @@ jobs:
           python -m pytest -q
           python -m compileall -q main.py deepcrawler
 
-      - name: Build DeepCrawler directly with Buildozer
-        id: android-build
-        continue-on-error: true
+      - name: Build DeepCrawler directly with patched stable p4a
         working-directory: work/deepcrawler_android
         shell: bash
         run: |
@@ -120,11 +155,6 @@ jobs:
             work/deepcrawler_android/.buildozer/android/platform/**/build/reports/**
           if-no-files-found: warn
           retention-days: 7
-
-      - name: Fail when Android compilation failed
-        if: steps.android-build.outcome == 'failure'
-        shell: bash
-        run: exit 1
 
       - name: Set up Android verification tools
         uses: android-actions/setup-android@v3
