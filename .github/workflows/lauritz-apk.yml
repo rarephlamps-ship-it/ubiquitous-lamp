@@ -1,8 +1,8 @@
-name: Build Lauritz Forensic Explorer APK
+name: Build Lauritz Forensic Explorer v1.1 APK
 
 on:
   push:
-    branches: [lauritz-apk-build-temp]
+    branches: [lauritz-v11-build-temp2]
   workflow_dispatch:
 
 permissions:
@@ -10,122 +10,86 @@ permissions:
 
 jobs:
   build:
-    name: Verify source, test, lint and build APK
+    name: Verify source, test, lint and build v1.1 APK
     runs-on: ubuntu-latest
     timeout-minutes: 45
-
     steps:
-      - name: Checkout temporary build branch
-        uses: actions/checkout@v4
-
-      - name: Reconstruct, patch and verify source
+      - uses: actions/checkout@v4
+      - name: Reconstruct and patch source
         shell: bash
         run: |
           set -euo pipefail
-          cat lauritz-build/source.part00.b64 \
-              lauritz-build/source.part01.b64 \
-              lauritz-build/source.part02.b64 \
-              lauritz-build/source.part03.b64 > lauritz-build/source.b64
+          cat lauritz-build/source.part00.b64 lauritz-build/source.part01.b64 lauritz-build/source.part02.b64 lauritz-build/source.part03.b64 > lauritz-build/source.b64
           base64 --decode lauritz-build/source.b64 > lauritz-build-src.tar.xz
           echo "d01cbddb6e3a7f45a9ebb2a79e2ff1de285b89c09a71261ac4a2177a2d35e9e0  lauritz-build-src.tar.xz" | sha256sum -c -
           echo "cb94ee5db7defb38406ffefd1fea52c896b9fdec1a829bcd48dd435f67c437db  lauritz-build/fix-001.patch" | sha256sum -c -
-          rm -rf lauritz-app
-          mkdir lauritz-app
+          base64 --decode lauritz-build/v11.patch.xz.b64 > v11.patch.xz
+          echo "73f015276c11fba3bdb2cbc37827977f5ec251e17fcfb787bb525a819046c40b  v11.patch.xz" | sha256sum -c -
+          xz -dc v11.patch.xz > v11.patch
+          rm -rf lauritz-app && mkdir lauritz-app
           tar -xJf lauritz-build-src.tar.xz -C lauritz-app
-          patch -d lauritz-app -p1 --dry-run < lauritz-build/fix-001.patch
           patch -d lauritz-app -p1 < lauritz-build/fix-001.patch
-          grep -q 'import androidx.compose.ui.unit.dp' lauritz-app/app/src/main/java/dk/ruko/lauritz/ui/navigation/AppNavigation.kt
-          test -f lauritz-app/settings.gradle.kts
-          test -f lauritz-app/build.gradle.kts
-          test -f lauritz-app/app/build.gradle.kts
-          test -f lauritz-app/app/src/main/AndroidManifest.xml
-
-      - name: Set up Java 17
-        uses: actions/setup-java@v4
+          patch -d lauritz-app -p1 < v11.patch
+          grep -q 'versionName = "1.1.0"' lauritz-app/app/build.gradle.kts
+          grep -q 'android.permission.INTERNET' lauritz-app/app/src/main/AndroidManifest.xml
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
+      - uses: android-actions/setup-android@v3
       - name: Install Android SDK packages
         shell: bash
         run: |
-          set -euo pipefail
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platform-tools" "platforms;android-36" "build-tools;35.0.0"
-
-      - name: Set up Gradle 8.13
-        uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
-
       - name: Unit tests
         working-directory: lauritz-app
-        shell: bash
-        run: |
-          set +e
-          gradle --no-daemon --stacktrace testDebugUnitTest 2>&1 | tee unit-test.log
-          status=${PIPESTATUS[0]}
-          if [ "$status" -ne 0 ]; then
-            echo "---- filtered Gradle/Kotlin diagnostics ----"
-            grep -E "(^e: |^w: |error:|FAILURE:|What went wrong|Compilation error|Unresolved reference|Type mismatch|Cannot infer|Could not resolve|Could not find|Execution failed for task)" unit-test.log | tail -n 45 | tee unit-test-filtered.log || true
-            while IFS= read -r line; do
-              safe=${line//'%'/'%25'}
-              safe=${safe//$'\r'/'%0D'}
-              safe=${safe//$'\n'/'%0A'}
-              echo "::error title=Lauritz Gradle diagnostic::$safe"
-            done < unit-test-filtered.log
-            exit "$status"
-          fi
-
+        run: gradle --no-daemon --stacktrace testDebugUnitTest
       - name: Android lint
         working-directory: lauritz-app
         run: gradle --no-daemon --stacktrace lintDebug
-
       - name: Build debug APK
         working-directory: lauritz-app
         run: gradle --no-daemon --stacktrace assembleDebug
-
-      - name: Verify package, alignment and APK signature
+      - name: Verify package, permissions, alignment and signature
         shell: bash
         run: |
           set -euo pipefail
           APK="lauritz-app/app/build/outputs/apk/debug/app-debug.apk"
           BT="$ANDROID_HOME/build-tools/35.0.0"
-          test -s "$APK"
           "$BT/zipalign" -c -P 16 -v 4 "$APK"
           "$BT/apksigner" verify --verbose --print-certs "$APK" | tee apk-signature.txt
           "$BT/aapt" dump badging "$APK" | tee apk-badging.txt
+          "$BT/aapt" dump permissions "$APK" | tee apk-permissions.txt
           grep -q "package: name='dk.ruko.lauritz'" apk-badging.txt
+          grep -q "versionName='1.1.0'" apk-badging.txt
           grep -q "sdkVersion:'29'" apk-badging.txt
+          grep -q "android.permission.INTERNET" apk-permissions.txt
+          ! grep -Eq "READ_EXTERNAL_STORAGE|WRITE_EXTERNAL_STORAGE|MANAGE_EXTERNAL_STORAGE" apk-permissions.txt
           mkdir -p dist
-          cp "$APK" dist/Lauritz-Forensic-Explorer-v1.0.0-debug.apk
-          sha256sum dist/Lauritz-Forensic-Explorer-v1.0.0-debug.apk > dist/Lauritz-Forensic-Explorer-v1.0.0-debug.apk.sha256
-          cat dist/Lauritz-Forensic-Explorer-v1.0.0-debug.apk.sha256
-
-      - name: Upload verified APK
-        uses: actions/upload-artifact@v4
+          cp "$APK" dist/Lauritz-Forensic-Explorer-v1.1.0-debug.apk
+          sha256sum dist/Lauritz-Forensic-Explorer-v1.1.0-debug.apk > dist/Lauritz-Forensic-Explorer-v1.1.0-debug.apk.sha256
+          cat dist/Lauritz-Forensic-Explorer-v1.1.0-debug.apk.sha256
+      - uses: actions/upload-artifact@v4
         with:
-          name: Lauritz-Forensic-Explorer-APK
+          name: Lauritz-Forensic-Explorer-v1.1-APK
           path: dist/
           if-no-files-found: error
           retention-days: 14
-
       - name: Upload diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Lauritz-Forensic-Explorer-Diagnostics
+          name: Lauritz-Forensic-Explorer-v1.1-Diagnostics
           path: |
             apk-signature.txt
             apk-badging.txt
-            lauritz-app/unit-test.log
-            lauritz-app/unit-test-filtered.log
+            apk-permissions.txt
             lauritz-app/app/build/reports/tests/
             lauritz-app/app/build/test-results/
-            lauritz-app/app/build/reports/lint-results-debug.html
-            lauritz-app/app/build/reports/lint-results-debug.txt
+            lauritz-app/app/build/reports/lint-results-debug.*
           if-no-files-found: warn
           retention-days: 14
