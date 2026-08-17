@@ -1,0 +1,137 @@
+name: Build DeepCrawler Android APK (Public Builder)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - build/deepcrawler-public-apk-v2-20260817
+    paths:
+      - "deepcrawler-build/**"
+      - ".github/workflows/deepcrawler-public-apk.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deepcrawler-public-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Reconstruct, test and build installable APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout public builder branch
+        uses: actions/checkout@v4
+
+      - name: Reconstruct and verify DeepCrawler source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat deepcrawler-build/source/chunk-*.b64 > deepcrawler-source.b64
+          base64 --decode deepcrawler-source.b64 > deepcrawler-source.zip
+          echo "3ab787ff6a467d674c8a14eea58743450ce1330330d2b2b2fb695b2867c6a4a4  deepcrawler-source.zip" | sha256sum -c -
+          unzip -t deepcrawler-source.zip >/dev/null
+          rm -rf work
+          mkdir -p work
+          unzip -q deepcrawler-source.zip -d work
+          test -f work/deepcrawler_android/buildozer.spec
+          test -f work/deepcrawler_android/main.py
+          test -f work/deepcrawler_android/deepcrawler/engine.py
+          grep -q '^version = 2.0.0$' work/deepcrawler_android/buildozer.spec
+          grep -q '^android.api = 35$' work/deepcrawler_android/buildozer.spec
+          grep -q '^android.minapi = 24$' work/deepcrawler_android/buildozer.spec
+          grep -q '^android.accept_sdk_license = True$' work/deepcrawler_android/buildozer.spec
+
+      - name: Set up Python 3.12 for pre-build tests
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Run release gate
+        working-directory: work/deepcrawler_android
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install pytest requests beautifulsoup4
+          python -m pytest -q
+          python -m compileall -q main.py deepcrawler
+
+      - name: Build DeepCrawler with Buildozer 1.6.0
+        id: buildozer
+        uses: ArtemSBulgakov/buildozer-action@v1.2.0
+        with:
+          repository_root: .
+          workdir: work/deepcrawler_android
+          buildozer_version: 1.6.0
+          command: buildozer android debug
+
+      - name: Set up Java 17 for APK verification
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android verification tools
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android build-tools 35.0.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Verify APK package, SDK, ABIs and signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="$(find work/deepcrawler_android/bin -maxdepth 1 -type f -name '*.apk' -print | head -n 1)"
+          test -n "$APK"
+          test -s "$APK"
+          unzip -t "$APK" >/dev/null
+
+          BT="$ANDROID_HOME/build-tools/35.0.0"
+          "$BT/apksigner" verify --verbose --print-certs "$APK" | tee apk-signature.txt
+          "$BT/aapt" dump badging "$APK" | tee apk-badging.txt
+
+          grep -q "package: name='org.deepcrawler.deepcrawler'" apk-badging.txt
+          grep -q "sdkVersion:'24'" apk-badging.txt
+          unzip -l "$APK" | grep -q 'lib/arm64-v8a/'
+          unzip -l "$APK" | grep -q 'lib/armeabi-v7a/'
+
+          mkdir -p dist
+          cp "$APK" dist/DeepCrawler-Android-v2.0.0-debug.apk
+          (
+            cd dist
+            sha256sum DeepCrawler-Android-v2.0.0-debug.apk > SHA256SUMS.txt
+            sha256sum -c SHA256SUMS.txt
+          )
+          ls -lh dist/
+
+      - name: Upload DeepCrawler APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: DeepCrawler-Android-v2.0.0-APK
+          path: |
+            dist/DeepCrawler-Android-v2.0.0-debug.apk
+            dist/SHA256SUMS.txt
+            apk-signature.txt
+            apk-badging.txt
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DeepCrawler-build-diagnostics
+          path: |
+            work/deepcrawler_android/.buildozer/android/platform/**/*.log
+            work/deepcrawler_android/.buildozer/android/platform/**/build/reports/**
+          if-no-files-found: warn
+          retention-days: 7
