@@ -41,6 +41,7 @@ jobs:
           test -f work/deepcrawler_android/main.py
           test -f work/deepcrawler_android/deepcrawler/engine.py
           grep -q '^version = 2.0.0$' work/deepcrawler_android/buildozer.spec
+          grep -q '^requirements = python3,kivy,requests,beautifulsoup4$' work/deepcrawler_android/buildozer.spec
           grep -q '^android.api = 35$' work/deepcrawler_android/buildozer.spec
           grep -q '^android.minapi = 24$' work/deepcrawler_android/buildozer.spec
           grep -q '^android.ndk = 28c$' work/deepcrawler_android/buildozer.spec
@@ -91,35 +92,29 @@ jobs:
           buildozer --version
           cython --version
 
-      - name: Pin stable p4a and deterministic pure-Python HTTP dependency
+      - name: Pin p4a cross-platform wheel installer fix
         shell: bash
         run: |
           set -euo pipefail
           rm -rf p4a
           git clone --filter=blob:none https://github.com/kivy/python-for-android.git p4a
-          git -C p4a checkout --detach 58d21141f17c889bf8585f5665921d72028f8831
-          test "$(git -C p4a rev-parse HEAD)" = "58d21141f17c889bf8585f5665921d72028f8831"
+          git -C p4a checkout --detach 35f3a2fa2a84b4fe8537b5f29f0574d67fec9d01
+          test "$(git -C p4a rev-parse HEAD)" = "35f3a2fa2a84b4fe8537b5f29f0574d67fec9d01"
 
           python - <<'PY'
           from pathlib import Path
 
-          p = Path("p4a/pythonforandroid/build.py")
-          text = p.read_text(encoding="utf-8")
-          old = "shprint(host_python, '-m', 'venv', 'venv')"
-          new = "shprint(host_python, '-m', 'venv', '--clear', 'venv')"
-          count = text.count(old)
-          if count != 1:
-              raise SystemExit(f"Expected exactly one p4a venv creation site, found {count}")
-          p.write_text(text.replace(old, new), encoding="utf-8")
+          build_py = Path("p4a/pythonforandroid/build.py")
+          text = build_py.read_text(encoding="utf-8")
+          if "--only-binary=:all:" not in text:
+              raise SystemExit("Pinned p4a commit lacks cross-platform binary wheel install")
+          if "*platforms, *indices" not in text:
+              raise SystemExit("Pinned p4a commit lacks Android platform-tag propagation")
+          if "shprint(host_python, '-m', 'venv'" in text:
+              raise SystemExit("Pinned p4a commit unexpectedly recreates package-install venv")
 
           spec = Path("work/deepcrawler_android/buildozer.spec")
           s = spec.read_text(encoding="utf-8")
-          old_req = "requirements = python3,kivy,requests,beautifulsoup4"
-          new_req = "requirements = python3,kivy,requests,beautifulsoup4,charset-normalizer==3.4.9"
-          if s.count(old_req) != 1:
-              raise SystemExit("Unexpected Buildozer requirements line")
-          s = s.replace(old_req, new_req, 1)
-
           marker = "\n[buildozer]\n"
           if marker not in s:
               raise SystemExit("Missing [buildozer] section")
@@ -128,12 +123,12 @@ jobs:
           spec.write_text(s, encoding="utf-8")
           PY
 
-          grep -Fq "shprint(host_python, '-m', 'venv', '--clear', 'venv')" p4a/pythonforandroid/build.py
-          ! grep -Fq "shprint(host_python, '-m', 'venv', 'venv')" p4a/pythonforandroid/build.py
+          grep -q '^requirements = python3,kivy,requests,beautifulsoup4$' work/deepcrawler_android/buildozer.spec
           grep -q '^p4a.source_dir = ' work/deepcrawler_android/buildozer.spec
-          grep -q '^requirements = python3,kivy,requests,beautifulsoup4,charset-normalizer==3.4.9$' work/deepcrawler_android/buildozer.spec
-          git -C p4a diff --check
-          git -C p4a diff -- pythonforandroid/build.py
+          grep -Fq -- '--only-binary=:all:' p4a/pythonforandroid/build.py
+          grep -Fq '*platforms, *indices' p4a/pythonforandroid/build.py
+          ! grep -Fq "shprint(host_python, '-m', 'venv'" p4a/pythonforandroid/build.py
+          git -C p4a status --short
 
       - name: Run release gate
         working-directory: work/deepcrawler_android
@@ -143,7 +138,7 @@ jobs:
           python -m pytest -q
           python -m compileall -q main.py deepcrawler
 
-      - name: Build DeepCrawler directly with patched stable p4a
+      - name: Build DeepCrawler with pinned p4a wheel fix
         working-directory: work/deepcrawler_android
         shell: bash
         run: |
