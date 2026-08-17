@@ -59,7 +59,22 @@ jobs:
 
       - name: Unit tests
         working-directory: lauritz-app
-        run: gradle --no-daemon --stacktrace testDebugUnitTest
+        shell: bash
+        run: |
+          set +e
+          gradle --no-daemon --stacktrace testDebugUnitTest 2>&1 | tee unit-test.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            echo "---- filtered Gradle/Kotlin diagnostics ----"
+            grep -E "(^e: |^w: |error:|FAILURE:|What went wrong|Compilation error|Unresolved reference|Type mismatch|Cannot infer|Could not resolve|Could not find|Execution failed for task)" unit-test.log | tail -n 45 | tee unit-test-filtered.log || true
+            while IFS= read -r line; do
+              safe=${line//'%'/'%25'}
+              safe=${safe//$'\r'/'%0D'}
+              safe=${safe//$'\n'/'%0A'}
+              echo "::error title=Lauritz Gradle diagnostic::$safe"
+            done < unit-test-filtered.log
+            exit "$status"
+          fi
 
       - name: Android lint
         working-directory: lauritz-app
@@ -102,6 +117,8 @@ jobs:
           path: |
             apk-signature.txt
             apk-badging.txt
+            lauritz-app/unit-test.log
+            lauritz-app/unit-test-filtered.log
             lauritz-app/app/build/reports/tests/
             lauritz-app/app/build/test-results/
             lauritz-app/app/build/reports/lint-results-debug.html
