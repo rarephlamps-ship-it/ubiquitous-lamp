@@ -1,0 +1,13 @@
+diff --git a/app/src/main/java/dk/ruko/lauritz/ui/navigation/AppNavigation.kt b/app/src/main/java/dk/ruko/lauritz/ui/navigation/AppNavigation.kt
+index 7a75e18..b65010b 100644
+--- a/app/src/main/java/dk/ruko/lauritz/ui/navigation/AppNavigation.kt
++++ b/app/src/main/java/dk/ruko/lauritz/ui/navigation/AppNavigation.kt
+@@ -58,7 +58,7 @@ private val navItems=listOf(NavItem("dashboard","Home",Icons.Outlined.Dashboard)
+             composable("web-compare/{lotId}/{artifactIndex}"){entry->
+                 val s=(datasetState as? DatasetState.Connected)?.session; if(s==null)MissingDataset(datasetState,onOpenDataset) else {
+                     val lotId=entry.arguments?.getString("lotId") ?: return@composable; val idx=entry.arguments?.getString("artifactIndex")?.toIntOrNull() ?: 0
+-                    val lot=remember(lotId,s){s.lots.getById(lotId)}; val artifacts=remember(lotId,s){lot?.let{s.artifacts.forLot(it).filter(dk.ruko.lauritz.data.evidence::isImageArtifact)}.orEmpty()}; var evidence by remember{mutableStateOf<dk.ruko.lauritz.model.EvidenceImage?>(null)}
++                    val lot=remember(lotId,s){s.lots.getById(lotId)}; val artifacts=remember(lotId,s){lot?.let{s.artifacts.forLot(it).filter { dk.ruko.lauritz.data.evidence.isImageArtifact(it) }}.orEmpty()}; var evidence by remember{mutableStateOf<dk.ruko.lauritz.model.EvidenceImage?>(null)}
+                     LaunchedEffect(idx,s){ artifacts.getOrNull(idx)?.let{ evidence=dk.ruko.lauritz.data.evidence.EvidenceAssetResolver(context).resolve(s.case,it) } }
+                     val vm:WebCompareViewModel=viewModel(); LaunchedEffect(lot,evidence){ if(lot!=null && evidence!=null){vm.attach(registry,analystDatabase);vm.start(lot,evidence!!,offline=false)} }
+                     WebCompareScreen(vm,onOpenSource={url->context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(url)))},onSaveFinding={r->scope.launch{vm.saveFinding(r)}})
