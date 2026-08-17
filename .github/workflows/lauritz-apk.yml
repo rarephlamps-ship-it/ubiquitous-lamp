@@ -1,0 +1,110 @@
+name: Build Lauritz Forensic Explorer APK
+
+on:
+  push:
+    branches: [lauritz-apk-build-temp]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Verify source, test, lint and build APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout temporary build branch
+        uses: actions/checkout@v4
+
+      - name: Reconstruct and verify source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat lauritz-build/source.part00.b64 \
+              lauritz-build/source.part01.b64 \
+              lauritz-build/source.part02.b64 \
+              lauritz-build/source.part03.b64 > lauritz-build/source.b64
+          base64 --decode lauritz-build/source.b64 > lauritz-build-src.tar.xz
+          echo "d01cbddb6e3a7f45a9ebb2a79e2ff1de285b89c09a71261ac4a2177a2d35e9e0  lauritz-build-src.tar.xz" | sha256sum -c -
+          rm -rf lauritz-app
+          mkdir lauritz-app
+          tar -xJf lauritz-build-src.tar.xz -C lauritz-app
+          test -f lauritz-app/settings.gradle.kts
+          test -f lauritz-app/build.gradle.kts
+          test -f lauritz-app/app/build.gradle.kts
+          test -f lauritz-app/app/src/main/AndroidManifest.xml
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;35.0.0"
+
+      - name: Set up Gradle 8.13
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Unit tests
+        working-directory: lauritz-app
+        run: gradle --no-daemon --stacktrace testDebugUnitTest
+
+      - name: Android lint
+        working-directory: lauritz-app
+        run: gradle --no-daemon --stacktrace lintDebug
+
+      - name: Build debug APK
+        working-directory: lauritz-app
+        run: gradle --no-daemon --stacktrace assembleDebug
+
+      - name: Verify package, alignment and APK signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="lauritz-app/app/build/outputs/apk/debug/app-debug.apk"
+          BT="$ANDROID_HOME/build-tools/35.0.0"
+          test -s "$APK"
+          "$BT/zipalign" -c -P 16 -v 4 "$APK"
+          "$BT/apksigner" verify --verbose --print-certs "$APK" | tee apk-signature.txt
+          "$BT/aapt" dump badging "$APK" | tee apk-badging.txt
+          grep -q "package: name='dk.ruko.lauritz'" apk-badging.txt
+          grep -q "sdkVersion:'29'" apk-badging.txt
+          mkdir -p dist
+          cp "$APK" dist/Lauritz-Forensic-Explorer-v1.0.0-debug.apk
+          sha256sum dist/Lauritz-Forensic-Explorer-v1.0.0-debug.apk > dist/Lauritz-Forensic-Explorer-v1.0.0-debug.apk.sha256
+          cat dist/Lauritz-Forensic-Explorer-v1.0.0-debug.apk.sha256
+
+      - name: Upload verified APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lauritz-Forensic-Explorer-APK
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lauritz-Forensic-Explorer-Diagnostics
+          path: |
+            apk-signature.txt
+            apk-badging.txt
+            lauritz-app/app/build/reports/tests/
+            lauritz-app/app/build/test-results/
+            lauritz-app/app/build/reports/lint-results-debug.html
+            lauritz-app/app/build/reports/lint-results-debug.txt
+          if-no-files-found: warn
+          retention-days: 14
