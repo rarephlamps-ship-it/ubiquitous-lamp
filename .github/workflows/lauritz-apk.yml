@@ -18,7 +18,7 @@ jobs:
       - name: Checkout temporary build branch
         uses: actions/checkout@v4
 
-      - name: Reconstruct and verify source archive
+      - name: Reconstruct, patch and verify source
         shell: bash
         run: |
           set -euo pipefail
@@ -28,9 +28,13 @@ jobs:
               lauritz-build/source.part03.b64 > lauritz-build/source.b64
           base64 --decode lauritz-build/source.b64 > lauritz-build-src.tar.xz
           echo "d01cbddb6e3a7f45a9ebb2a79e2ff1de285b89c09a71261ac4a2177a2d35e9e0  lauritz-build-src.tar.xz" | sha256sum -c -
+          echo "cb94ee5db7defb38406ffefd1fea52c896b9fdec1a829bcd48dd435f67c437db  lauritz-build/fix-001.patch" | sha256sum -c -
           rm -rf lauritz-app
           mkdir lauritz-app
           tar -xJf lauritz-build-src.tar.xz -C lauritz-app
+          git -C lauritz-app apply --check ../lauritz-build/fix-001.patch
+          git -C lauritz-app apply ../lauritz-build/fix-001.patch
+          grep -q 'import androidx.compose.ui.unit.dp' lauritz-app/app/src/main/java/dk/ruko/lauritz/ui/navigation/AppNavigation.kt
           test -f lauritz-app/settings.gradle.kts
           test -f lauritz-app/build.gradle.kts
           test -f lauritz-app/app/build.gradle.kts
