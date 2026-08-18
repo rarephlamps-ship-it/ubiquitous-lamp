@@ -3,6 +3,8 @@ name: Verify Lauritz Forensic Explorer v1.3 CI
 on:
   push:
     branches: [lauritz-v130-ci]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
