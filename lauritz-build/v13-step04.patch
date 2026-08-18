@@ -1,3 +1,224 @@
+diff --git a/app/src/main/java/dk/ruko/lauritz/data/intelligence/IntelligenceRepository.kt b/app/src/main/java/dk/ruko/lauritz/data/intelligence/IntelligenceRepository.kt
+new file mode 100644
+index 0000000..9d3ca1b
+--- /dev/null
++++ b/app/src/main/java/dk/ruko/lauritz/data/intelligence/IntelligenceRepository.kt
+@@ -0,0 +1,215 @@
++package dk.ruko.lauritz.data.intelligence
++
++import androidx.room.withTransaction
++import dk.ruko.lauritz.data.intelligence.entities.AiConclusionEntity
++import dk.ruko.lauritz.data.intelligence.entities.AnalysisRunEntity
++import dk.ruko.lauritz.data.intelligence.entities.ComparisonEventEntity
++import dk.ruko.lauritz.data.intelligence.entities.DatasetKnowledgeEntity
++import dk.ruko.lauritz.data.intelligence.entities.KnowledgeSnapshotEntity
++import dk.ruko.lauritz.intelligence.model.AnalysisRunStatus
++import dk.ruko.lauritz.intelligence.model.AnalysisRunType
++import dk.ruko.lauritz.intelligence.model.AnalystConclusionStatus
++import dk.ruko.lauritz.intelligence.model.ComparisonDraft
++import dk.ruko.lauritz.intelligence.model.ConclusionDraft
++import dk.ruko.lauritz.intelligence.model.KnowledgeAdvance
++
++object KnowledgeVersionPolicy {
++    fun next(current: Long, learnedSomething: Boolean): Long =
++        if (learnedSomething) Math.addExact(current, 1L) else current
++}
++
++class IntelligenceRepository(private val db: IntelligenceDatabase) {
++    suspend fun ensureDataset(
++        datasetId: String,
++        sourceTreeUri: String?,
++        nowUtc: Long
++    ): DatasetKnowledgeEntity = db.withTransaction {
++        val dao = db.knowledge()
++        val current = dao.dataset(datasetId)
++        if (current != null) {
++            val updated = current.copy(
++                sourceTreeUri = sourceTreeUri,
++                updatedUtc = nowUtc
++            )
++            dao.updateDataset(updated)
++            updated
++        } else {
++            val initial = DatasetKnowledgeEntity(
++                datasetId = datasetId,
++                sourceTreeUri = sourceTreeUri,
++                createdUtc = nowUtc,
++                updatedUtc = nowUtc,
++                activeKnowledgeVersion = 0L,
++                lastIndexedLotId = null,
++                indexState = "IDLE"
++            )
++            val inserted = dao.insertDataset(initial)
++            if (inserted != -1L) {
++                initial
++            } else {
++                val concurrent = requireNotNull(dao.dataset(datasetId)) {
++                    "dataset disappeared after concurrent insert: $datasetId"
++                }
++                val updated = concurrent.copy(
++                    sourceTreeUri = sourceTreeUri,
++                    updatedUtc = nowUtc
++                )
++                dao.updateDataset(updated)
++                updated
++            }
++        }
++    }
++
++    suspend fun beginRun(
++        datasetId: String,
++        runType: AnalysisRunType,
++        knowledgeVersion: Long,
++        modelManifestJson: String,
++        configJson: String,
++        inputSetHash: String,
++        startedUtc: Long
++    ): Long = db.knowledge().insertRun(
++        AnalysisRunEntity(
++            datasetId = datasetId,
++            runType = runType,
++            startedUtc = startedUtc,
++            finishedUtc = null,
++            status = AnalysisRunStatus.RUNNING,
++            knowledgeVersion = knowledgeVersion,
++            modelManifestJson = modelManifestJson,
++            configJson = configJson,
++            inputSetHash = inputSetHash,
++            checkpointJson = null,
++            errorCode = null,
++            errorMessage = null
++        )
++    )
++
++    suspend fun completeRun(
++        runId: Long,
++        finishedUtc: Long,
++        checkpointJson: String?
++    ) {
++        val dao = db.knowledge()
++        val current = requireNotNull(dao.run(runId)) { "unknown analysis run: $runId" }
++        dao.updateRun(
++            current.copy(
++                finishedUtc = finishedUtc,
++                status = AnalysisRunStatus.COMPLETE,
++                checkpointJson = checkpointJson,
++                errorCode = null,
++                errorMessage = null
++            )
++        )
++    }
++
++    suspend fun failRun(
++        runId: Long,
++        finishedUtc: Long,
++        errorCode: String,
++        errorMessage: String,
++        checkpointJson: String?
++    ) {
++        val dao = db.knowledge()
++        val current = requireNotNull(dao.run(runId)) { "unknown analysis run: $runId" }
++        dao.updateRun(
++            current.copy(
++                finishedUtc = finishedUtc,
++                status = AnalysisRunStatus.FAILED,
++                checkpointJson = checkpointJson,
++                errorCode = errorCode,
++                errorMessage = errorMessage
++            )
++        )
++    }
++
++    suspend fun recordComparison(
++        draft: ComparisonDraft,
++        summaryJson: String,
++        nowUtc: Long
++    ): KnowledgeAdvance = db.withTransaction {
++        val current = requireNotNull(db.knowledge().dataset(draft.datasetId)) {
++            "unknown intelligence dataset: ${draft.datasetId}"
++        }
++        val before = current.activeKnowledgeVersion
++        val after = KnowledgeVersionPolicy.next(before, learnedSomething = true)
++        val comparisonId = db.features().insertComparison(
++            ComparisonEventEntity(
++                datasetId = draft.datasetId,
++                subjectAType = draft.subjectAType.name,
++                subjectAId = draft.subjectAId,
++                subjectBType = draft.subjectBType.name,
++                subjectBId = draft.subjectBId,
++                similarityScore = draft.similarityScore,
++                visualScore = draft.visualScore,
++                markScore = draft.markScore,
++                metadataScore = draft.metadataScore,
++                relationshipScore = draft.relationshipScore,
++                reasonJson = draft.reasonJson,
++                analysisRunId = draft.analysisRunId,
++                knowledgeVersionBefore = before,
++                knowledgeVersionAfter = after,
++                createdUtc = nowUtc
++            )
++        )
++        db.knowledge().insertSnapshot(
++            KnowledgeSnapshotEntity(
++                datasetId = draft.datasetId,
++                knowledgeVersion = after,
++                parentVersion = before,
++                triggerComparisonId = comparisonId,
++                summaryJson = summaryJson,
++                createdUtc = nowUtc
++            )
++        )
++        db.knowledge().updateDataset(
++            current.copy(
++                activeKnowledgeVersion = after,
++                updatedUtc = nowUtc
++            )
++        )
++        KnowledgeAdvance(
++            comparisonId = comparisonId,
++            beforeVersion = before,
++            afterVersion = after
++        )
++    }
++
++    suspend fun appendConclusion(
++        draft: ConclusionDraft,
++        knowledgeVersion: Long,
++        nowUtc: Long
++    ): Long = db.withTransaction {
++        draft.supersedesConclusionId?.let { previousId ->
++            val previous = requireNotNull(db.learning().conclusion(previousId)) {
++                "superseded conclusion does not exist: $previousId"
++            }
++            require(previous.datasetId == draft.datasetId && previous.lotId == draft.lotId) {
++                "superseded conclusion must belong to the same dataset and lot"
++            }
++        }
++        db.learning().insertConclusion(
++            AiConclusionEntity(
++                datasetId = draft.datasetId,
++                lotId = draft.lotId,
++                analysisRunId = draft.analysisRunId,
++                conclusion = draft.conclusion,
++                fakeProbability = draft.fakeProbability,
++                confidence = draft.confidence,
++                evidenceQuality = draft.evidenceQuality,
++                anomalyScore = draft.anomalyScore,
++                relistingProbability = draft.relistingProbability,
++                explanationJson = draft.explanationJson,
++                referenceIdsJson = draft.referenceIdsJson,
++                knowledgeVersion = knowledgeVersion,
++                createdUtc = nowUtc,
++                supersedesConclusionId = draft.supersedesConclusionId,
++                analystStatus = AnalystConclusionStatus.UNREVIEWED,
++                analystCorrection = null
++            )
++        )
++    }
++
++    suspend fun latestConclusion(datasetId: String, lotId: String): AiConclusionEntity? =
++        db.learning().latestConclusion(datasetId, lotId)
++}
 diff --git a/app/src/test/java/dk/ruko/lauritz/data/intelligence/ConclusionHistoryPolicyTest.kt b/app/src/test/java/dk/ruko/lauritz/data/intelligence/ConclusionHistoryPolicyTest.kt
 index b252ac8..072c095 100644
 --- a/app/src/test/java/dk/ruko/lauritz/data/intelligence/ConclusionHistoryPolicyTest.kt
