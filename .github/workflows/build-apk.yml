@@ -52,7 +52,8 @@ jobs:
           TEXT='LP/FH Deal & Evidence Cockpit samler værdiansættelse, evidens, auktionsdata og forhandlingsscenarier i ét sikkert værktøj. Potentialet ligger i kombinationen af flere systemer. Lauritz- og Bruun Rasmussen-databaserne kan bruges til at sammenligne store mængder objekter, finde relistings, gentagelser, mønstre og mulige provenance-problemer. Evidence-modulet samler fund, styrke, gaps og dokumentation, mens valuation-motoren kan beregne salgs-, licens-, retainer- og recovery-scenarier. Sammen med OSINT-platformen og AI-understøttede workflows kan løsningen forkorte arbejdet fra rå data til en struktureret sag og et beslutningsgrundlag. Det giver et betydeligt anvendelsespotentiale inden for brand protection, markedsovervågning, auktionsanalyse og rettighedshaverarbejde. Appen gør det muligt at præsentere potentialet samlet, sikkert og offline, fra evidens til økonomisk beslutning. Alle værdier og potentialevurderinger er scenarier og afhænger af datakvalitet, rettigheder og den konkrete anvendelse.'
           VOICE='da-DK-ChristelNeural'
           mkdir -p dist/public/onboarding release
-          edge-tts --list-voices | grep -q "$VOICE"
+          edge-tts --list-voices > /tmp/edge-voices.txt
+          grep -q "$VOICE" /tmp/edge-voices.txt
           edge-tts --voice "$VOICE" --rate=-8% --text "$TEXT" --write-media dist/public/onboarding/voice-da.mp3
           test -s dist/public/onboarding/voice-da.mp3
           duration=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 dist/public/onboarding/voice-da.mp3)
