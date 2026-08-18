@@ -1,3 +1,51 @@
+diff --git a/app/build.gradle.kts b/app/build.gradle.kts
+index 68c4ed1..9884b6e 100644
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -3,6 +3,7 @@ plugins {
+     id("org.jetbrains.kotlin.android")
+     id("org.jetbrains.kotlin.plugin.compose")
+     id("org.jetbrains.kotlin.kapt")
++    id("org.jetbrains.kotlin.plugin.serialization")
+ }
+ 
+ android {
+@@ -57,6 +58,7 @@ dependencies {
+ 
+     implementation("androidx.room:room-runtime:2.8.4")
+     implementation("androidx.room:room-ktx:2.8.4")
++    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+     kapt("androidx.room:room-compiler:2.8.4")
+ 
+     testImplementation("junit:junit:4.13.2")
+diff --git a/app/src/main/java/dk/ruko/lauritz/intelligence/model/IntelligenceJson.kt b/app/src/main/java/dk/ruko/lauritz/intelligence/model/IntelligenceJson.kt
+new file mode 100644
+index 0000000..ab1b970
+--- /dev/null
++++ b/app/src/main/java/dk/ruko/lauritz/intelligence/model/IntelligenceJson.kt
+@@ -0,0 +1,22 @@
++package dk.ruko.lauritz.intelligence.model
++
++import kotlinx.serialization.json.Json
++import kotlinx.serialization.json.JsonElement
++import kotlinx.serialization.json.JsonObject
++import java.security.MessageDigest
++
++object IntelligenceJson {
++    val codec = Json {
++        encodeDefaults = true
++        explicitNulls = true
++        ignoreUnknownKeys = false
++        prettyPrint = false
++    }
++
++    fun canonicalObject(values: Map<String, JsonElement>): String =
++        JsonObject(values.toSortedMap()).toString()
++
++    fun sha256Utf8(value: String): String = MessageDigest.getInstance("SHA-256")
++        .digest(value.toByteArray(Charsets.UTF_8))
++        .joinToString("") { "%02x".format(it) }
++}
 diff --git a/app/src/test/java/dk/ruko/lauritz/intelligence/model/IntelligenceJsonTest.kt b/app/src/test/java/dk/ruko/lauritz/intelligence/model/IntelligenceJsonTest.kt
 new file mode 100644
 index 0000000..0ec4a62
@@ -28,3 +76,13 @@ index 0000000..0ec4a62
 +        )
 +    }
 +}
+diff --git a/build.gradle.kts b/build.gradle.kts
+index ea3ef1a..9b9c564 100644
+--- a/build.gradle.kts
++++ b/build.gradle.kts
+@@ -3,4 +3,5 @@ plugins {
+     id("org.jetbrains.kotlin.android") version "2.2.10" apply false
+     id("org.jetbrains.kotlin.plugin.compose") version "2.2.10" apply false
+     id("org.jetbrains.kotlin.kapt") version "2.2.10" apply false
++    id("org.jetbrains.kotlin.plugin.serialization") version "2.2.10" apply false
+ }
