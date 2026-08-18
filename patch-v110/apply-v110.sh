@@ -69,10 +69,9 @@ android {
 LPFH_V111_DIST_5
 
 node - <<'NODE'
-const fs=require('fs');const p='dist/BUILD_INFO.json';const j=JSON.parse(fs.readFileSync(p,'utf8'));j.version='1.1.1';j.built_at=new Date().toISOString();j.onboarding_voice='da-DK-ChristelNeural';fs.writeFileSync(p,JSON.stringify(j,null,2));
+const fs=require('fs');const p='dist/BUILD_INFO.json';const j=JSON.parse(fs.readFileSync(p,'utf8'));j.version='1.1.1';j.built_at=new Date().toISOString();fs.writeFileSync(p,JSON.stringify(j,null,2));
 NODE
 grep -q '"version": "1.1.1"' dist/BUILD_INFO.json
-grep -q '"onboarding_voice": "da-DK-ChristelNeural"' dist/BUILD_INFO.json
 grep -q "versionName '1.1.1'" android/app/build.gradle
 grep -q 'versionCode 12' android/app/build.gradle
 grep -q -- '--gold:#d4b35a' dist/src/styles/tokens.css
