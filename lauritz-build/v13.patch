@@ -1,1 +1,30 @@
-# v1.3 working patch placeholder
+diff --git a/app/src/test/java/dk/ruko/lauritz/intelligence/model/IntelligenceJsonTest.kt b/app/src/test/java/dk/ruko/lauritz/intelligence/model/IntelligenceJsonTest.kt
+new file mode 100644
+index 0000000..0ec4a62
+--- /dev/null
++++ b/app/src/test/java/dk/ruko/lauritz/intelligence/model/IntelligenceJsonTest.kt
+@@ -0,0 +1,24 @@
++package dk.ruko.lauritz.intelligence.model
++
++import kotlinx.serialization.json.JsonPrimitive
++import org.junit.Assert.assertEquals
++import org.junit.Test
++
++class IntelligenceJsonTest {
++    @Test
++    fun canonicalObjectSortsKeys() {
++        val encoded = IntelligenceJson.canonicalObject(
++            mapOf("z" to JsonPrimitive(2), "a" to JsonPrimitive("x"))
++        )
++
++        assertEquals("{\"a\":\"x\",\"z\":2}", encoded)
++    }
++
++    @Test
++    fun canonicalHashIsStable() {
++        assertEquals(
++            IntelligenceJson.sha256Utf8("{\"a\":1}"),
++            IntelligenceJson.sha256Utf8("{\"a\":1}")
++        )
++    }
++}
