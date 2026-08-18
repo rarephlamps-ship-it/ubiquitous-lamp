@@ -47,6 +47,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
           python3 -m pip install --disable-pip-version-check --quiet edge-tts
           cd /tmp/lpfh-project
           TEXT='LP/FH Deal & Evidence Cockpit samler værdiansættelse, evidens, auktionsdata og forhandlingsscenarier i ét sikkert værktøj. Potentialet ligger i kombinationen af flere systemer. Lauritz- og Bruun Rasmussen-databaserne kan bruges til at sammenligne store mængder objekter, finde relistings, gentagelser, mønstre og mulige provenance-problemer. Evidence-modulet samler fund, styrke, gaps og dokumentation, mens valuation-motoren kan beregne salgs-, licens-, retainer- og recovery-scenarier. Sammen med OSINT-platformen og AI-understøttede workflows kan løsningen forkorte arbejdet fra rå data til en struktureret sag og et beslutningsgrundlag. Det giver et betydeligt anvendelsespotentiale inden for brand protection, markedsovervågning, auktionsanalyse og rettighedshaverarbejde. Appen gør det muligt at præsentere potentialet samlet, sikkert og offline, fra evidens til økonomisk beslutning. Alle værdier og potentialevurderinger er scenarier og afhænger af datakvalitet, rettigheder og den konkrete anvendelse.'
