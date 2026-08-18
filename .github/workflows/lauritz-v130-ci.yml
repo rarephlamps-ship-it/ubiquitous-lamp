@@ -1,0 +1,93 @@
+name: Verify Lauritz Forensic Explorer v1.3 CI
+
+on:
+  push:
+    branches: [lauritz-v130-ci]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Reconstruct v1.2 and test v1.3 patch
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct verified v1.2.0 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat lauritz-build/source.part00.b64 lauritz-build/source.part01.b64 lauritz-build/source.part02.b64 lauritz-build/source.part03.b64 > lauritz-build/source.b64
+          base64 --decode lauritz-build/source.b64 > lauritz-build-src.tar.xz
+          echo "d01cbddb6e3a7f45a9ebb2a79e2ff1de285b89c09a71261ac4a2177a2d35e9e0  lauritz-build-src.tar.xz" | sha256sum -c -
+          echo "cb94ee5db7defb38406ffefd1fea52c896b9fdec1a829bcd48dd435f67c437db  lauritz-build/fix-001.patch" | sha256sum -c -
+          echo "cfe1666f23b799f5e7947315fa7dbd4fed0960b6b7bd9f4f0ded235a0215f465  lauritz-build/fix-v11-001.patch" | sha256sum -c -
+          base64 --decode lauritz-build/v11.patch.xz.b64 > v11.patch.xz
+          echo "73f015276c11fba3bdb2cbc37827977f5ec251e17fcfb787bb525a819046c40b  v11.patch.xz" | sha256sum -c -
+          cat lauritz-build/v12.part00.b64 lauritz-build/v12.part01.b64 lauritz-build/v12.part02.b64 lauritz-build/v12.part03.b64 > v12.patch.xz.b64
+          base64 --decode v12.patch.xz.b64 > v12.patch.xz
+          echo "b2dd7a8dd049066613487f5828f28516787c731724580d6ae4f423a99a06dc23  v12.patch.xz" | sha256sum -c -
+
+          xz -dc v11.patch.xz > v11.patch
+          xz -dc v12.patch.xz > v12.patch
+          awk 'BEGIN{skip=0} /^diff --git a\/README.md b\/README.md/{skip=1; next} /^diff --git /{if(skip){skip=0}} !skip{print}' v12.patch > v12-app.patch
+          ! grep -q '^diff --git a/README.md b/README.md' v12-app.patch
+
+          rm -rf lauritz-app && mkdir lauritz-app
+          tar -xJf lauritz-build-src.tar.xz -C lauritz-app
+          patch -d lauritz-app -p1 < lauritz-build/fix-001.patch
+          patch -d lauritz-app -p1 --batch < v11.patch || true
+          patch -d lauritz-app -p1 < lauritz-build/fix-v11-001.patch
+          patch -d lauritz-app -p1 < v12-app.patch
+
+          grep -q 'versionName = "1.2.0"' lauritz-app/app/build.gradle.kts
+          grep -q 'versionCode = 4' lauritz-app/app/build.gradle.kts
+
+      - name: Apply v1.3 working patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -q '^diff --git ' lauritz-build/v13.patch; then
+            patch -d lauritz-app -p1 < lauritz-build/v13.patch
+          else
+            echo "No v1.3 code patch yet"
+          fi
+
+      - name: Use preinstalled Java 17
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${JAVA_HOME_17_X64:-}"
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_17_X64/bin" >> "$GITHUB_PATH"
+          "$JAVA_HOME_17_X64/bin/java" -version
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;35.0.0"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Unit tests
+        working-directory: lauritz-app
+        run: gradle --no-daemon --stacktrace testDebugUnitTest
+
+      - name: Upload unit-test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lauritz-v1.3-unit-test-diagnostics
+          path: |
+            lauritz-app/app/build/reports/tests/
+            lauritz-app/app/build/test-results/
+          if-no-files-found: warn
+          retention-days: 7
