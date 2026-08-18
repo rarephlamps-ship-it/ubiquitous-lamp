@@ -46,6 +46,12 @@ jobs:
           grep -q 'versionCode = 2' lauritz-app/app/build.gradle.kts
           patch -d lauritz-app -p1 < v12-app.patch
 
+          if grep -q '^diff --git ' lauritz-build/v13.patch; then
+            patch -d lauritz-app -p1 < lauritz-build/v13.patch
+          else
+            echo "No v1.3 working patch yet"
+          fi
+
           grep -q 'versionName = "1.2.0"' lauritz-app/app/build.gradle.kts
           grep -q 'versionCode = 4' lauritz-app/app/build.gradle.kts
           grep -q 'android.permission.INTERNET' lauritz-app/app/src/main/AndroidManifest.xml
