@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # LPFH v1.1.1 test build: calm Danish female onboarding voice
+# CI synchronize marker after voice-list gate fix
 set -euo pipefail
 ROOT="${1:-/tmp/lpfh-project}"
 cd "$ROOT"
