@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build LPFH Deal Cockpit v1.1.1 Test APK
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build:
-    name: Build broadly compatible installable APK
+    name: Build and verify installable LPFH v1.1.1 test APK
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -18,56 +18,75 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Reconstruct Android project
+      - name: Reconstruct verified LPFH source archive
         shell: bash
         run: |
           set -euo pipefail
-          cat source/chunk-00.b64 \
-              source/chunk-01.b64 \
-              source/chunk-02.b64 \
-              source/chunk-03.b64 \
-              source/chunk-04.b64 > project.tar.gz.b64
-          base64 --decode project.tar.gz.b64 > project.tar.gz
-          tar -xzf project.tar.gz
-          python3 source/apply-fixes.py
-          test -f settings.gradle
-          test -f app/build.gradle
-          test -f app/src/main/AndroidManifest.xml
-          grep -q "private void showMessage(String text, float seconds)" app/src/main/java/dk/ruko/ondskabensskov/GameView.java
+          cat source/lpfh2-00.b64 source/lpfh2-01.b64 source/lpfh2-02.b64 source/lpfh2-03.b64 source/lpfh2-04.b64 source/lpfh2-05.b64 source/lpfh2-06.b64 source/lpfh2-07.b64 source/lpfh2-08.b64 source/lpfh2-09.b64 source/lpfh2-10.b64 source/lpfh2-11.b64 source/lpfh2-12.b64 > /tmp/lpfh-project.tar.gz.b64
+          base64 --decode /tmp/lpfh-project.tar.gz.b64 > /tmp/lpfh-project.tar.gz
+          echo "d9bd45ad6e8657f718e6984688d1d25e7edb059829a1da76e7c4fc1419454abd  /tmp/lpfh-project.tar.gz" | sha256sum -c -
+          mkdir -p /tmp/lpfh-project
+          tar -xzf /tmp/lpfh-project.tar.gz -C /tmp/lpfh-project
+          test -f /tmp/lpfh-project/android/settings.gradle
+          test -f /tmp/lpfh-project/android/app/build.gradle
+          test -f /tmp/lpfh-project/android/app/src/main/AndroidManifest.xml
+          test -f /tmp/lpfh-project/dist/index.html
+          test -f /tmp/lpfh-project/dist/src/app.js
 
-      - name: Apply installer compatibility fix
+      - name: Apply v1.1.1 UI and version patch
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
+          chmod +x patch-v110/apply-v110.sh
+          ./patch-v110/apply-v110.sh /tmp/lpfh-project
+          grep -q '"version": "1.1.1"' /tmp/lpfh-project/dist/BUILD_INFO.json
+          grep -q "versionName '1.1.1'" /tmp/lpfh-project/android/app/build.gradle
+          grep -q 'versionCode 12' /tmp/lpfh-project/android/app/build.gradle
 
-          gradle = Path("app/build.gradle")
-          text = gradle.read_text(encoding="utf-8")
-          text = text.replace("applicationId 'dk.ruko.ondskabensskov'", "applicationId 'dk.ruko.ondskabensskov.compat'")
-          text = text.replace("minSdk 26", "minSdk 23")
-          text = text.replace("versionCode 1", "versionCode 2")
-          text = text.replace("versionName '1.0.0'", "versionName '1.0.1-install-fix'")
-          gradle.write_text(text, encoding="utf-8")
-
-          manifest = Path("app/src/main/AndroidManifest.xml")
-          xml = manifest.read_text(encoding="utf-8")
-          xml = xml.replace('android:name=".MainActivity"', 'android:name="dk.ruko.ondskabensskov.MainActivity"')
-          xml = xml.replace('<application\n', '<application\n        android:installLocation="auto"\n')
-          manifest.write_text(xml, encoding="utf-8")
-
-          assert "dk.ruko.ondskabensskov.compat" in gradle.read_text(encoding="utf-8")
-          assert "minSdk 23" in gradle.read_text(encoding="utf-8")
-          assert "versionCode 2" in gradle.read_text(encoding="utf-8")
-          assert "dk.ruko.ondskabensskov.MainActivity" in manifest.read_text(encoding="utf-8")
+      - name: Generate calm Danish female onboarding voice
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          python3 -m pip install --disable-pip-version-check --quiet edge-tts
+          cd /tmp/lpfh-project
+          TEXT='LP/FH Deal & Evidence Cockpit samler værdiansættelse, evidens, auktionsdata og forhandlingsscenarier i ét sikkert værktøj. Potentialet ligger i kombinationen af flere systemer. Lauritz- og Bruun Rasmussen-databaserne kan bruges til at sammenligne store mængder objekter, finde relistings, gentagelser, mønstre og mulige provenance-problemer. Evidence-modulet samler fund, styrke, gaps og dokumentation, mens valuation-motoren kan beregne salgs-, licens-, retainer- og recovery-scenarier. Sammen med OSINT-platformen og AI-understøttede workflows kan løsningen forkorte arbejdet fra rå data til en struktureret sag og et beslutningsgrundlag. Det giver et betydeligt anvendelsespotentiale inden for brand protection, markedsovervågning, auktionsanalyse og rettighedshaverarbejde. Appen gør det muligt at præsentere potentialet samlet, sikkert og offline, fra evidens til økonomisk beslutning. Alle værdier og potentialevurderinger er scenarier og afhænger af datakvalitet, rettigheder og den konkrete anvendelse.'
+          VOICE='da-DK-ChristelNeural'
+          mkdir -p dist/public/onboarding release
+          edge-tts --list-voices > /tmp/edge-voices.txt
+          grep -q "$VOICE" /tmp/edge-voices.txt
+          edge-tts --voice "$VOICE" --rate=-8% --text "$TEXT" --write-media dist/public/onboarding/voice-da.mp3
+          test -s dist/public/onboarding/voice-da.mp3
+          duration=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 dist/public/onboarding/voice-da.mp3)
+          python3 - "$duration" <<'PY'
+          import sys
+          duration=float(sys.argv[1])
+          assert 45 <= duration <= 75, f"onboarding duration outside approved range: {duration}"
+          print(f"ONBOARDING_DURATION={duration:.2f}s")
           PY
+          printf '%s\n' "$VOICE" > release/onboarding-voice.txt
+          printf '%s\n' "$duration" > release/onboarding-duration-seconds.txt
+          sha256sum dist/public/onboarding/voice-da.mp3 > release/onboarding-voice-da.mp3.sha256
+
+      - name: Prepare Android WebView assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /tmp/lpfh-project
+          rm -rf android/app/src/main/assets/www
+          mkdir -p android/app/src/main/assets/www
+          cp -a dist/. android/app/src/main/assets/www/
+          test -f android/app/src/main/assets/www/index.html
+          test -f android/app/src/main/assets/www/src/app.js
+          test -f android/app/src/main/assets/www/public/onboarding/voice-da.mp3
+          grep -q '"version": "1.1.1"' android/app/src/main/assets/www/BUILD_INFO.json
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-          cache: gradle
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
@@ -78,55 +97,80 @@ jobs:
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Set up Gradle
+      - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Compile Android project
+      - name: Compile normal debug test APK
         id: compile
         continue-on-error: true
         shell: bash
         run: |
           set +e
-          gradle --no-daemon --stacktrace clean assembleDebug > build.log 2>&1
+          cd /tmp/lpfh-project
+          gradle -p android --no-daemon --stacktrace clean assembleDebug > build.log 2>&1
           status=$?
           echo "status=$status" >> "$GITHUB_OUTPUT"
           {
             echo "=== COMPILER ERROR SUMMARY ==="
-            grep -nE "error:|FAILURE:|What went wrong|Execution failed|Caused by:|Android resource linking failed|AAPT|Could not" build.log | tail -n 240 || true
-            echo "=== FINAL 320 LOG LINES ==="
-            tail -n 320 build.log
+            grep -nE "error:|FAILURE:|What went wrong|Execution failed|Caused by:|Android resource linking failed|AAPT|Could not" build.log | tail -n 260 || true
+            echo "=== FINAL 360 LOG LINES ==="
+            tail -n 360 build.log
           } > build-summary.txt
           cat build-summary.txt
           exit 0
 
-      - name: Verify APK structure, package and signatures
+      - name: Verify APK package, version, alignment and signature
         if: steps.compile.outputs.status == '0'
         shell: bash
         run: |
-          set -euo pipefail
-          APK="app/build/outputs/apk/debug/app-debug.apk"
+          set +e
+          cd /tmp/lpfh-project
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
           BT="$ANDROID_HOME/build-tools/35.0.0"
+          mkdir -p release
           test -s "$APK"
-          "$BT/zipalign" -c -P 16 -v 4 "$APK"
-          "$BT/apksigner" verify --verbose --print-certs "$APK" | tee apk-signature.txt
-          "$BT/aapt" dump badging "$APK" | tee apk-badging.txt
-          grep -q "package: name='dk.ruko.ondskabensskov.compat'" apk-badging.txt
-          grep -q "sdkVersion:'23'" apk-badging.txt
-          grep -q "Verified using v1 scheme (JAR signing): true" apk-signature.txt
-          grep -q "Verified using v2 scheme (APK Signature Scheme v2): true" apk-signature.txt
-          mkdir -p dist
-          cp "$APK" "dist/Ondskabens-Skov-install-fix-v1.0.1.apk"
-          sha256sum "dist/Ondskabens-Skov-install-fix-v1.0.1.apk" > "dist/Ondskabens-Skov-install-fix-v1.0.1.apk.sha256"
-          ls -lh dist/*
+          apk_exists=$?
+          "$BT/zipalign" -c -P 16 -v 4 "$APK" > release/zipalign.txt 2>&1
+          zip_status=$?
+          "$BT/apksigner" verify --verbose --print-certs "$APK" > release/apk-signature.txt 2>&1
+          sig_status=$?
+          "$BT/aapt" dump badging "$APK" > release/apk-badging.txt 2>&1
+          aapt_status=$?
+          cp "$APK" "release/LPFH-Deal-Cockpit-v1.1.1-test.apk" 2>/dev/null || true
+          sha256sum "release/LPFH-Deal-Cockpit-v1.1.1-test.apk" > "release/LPFH-Deal-Cockpit-v1.1.1-test.apk.sha256" 2>/dev/null || true
+          cp dist/public/onboarding/voice-da.mp3 release/voice-da.mp3 2>/dev/null || true
+          {
+            echo "APK_EXISTS_STATUS=$apk_exists"
+            echo "ZIPALIGN_STATUS=$zip_status"
+            echo "APKSIGNER_STATUS=$sig_status"
+            echo "AAPT_STATUS=$aapt_status"
+            echo "--- ZIPALIGN ---"
+            cat release/zipalign.txt
+            echo "--- SIGNATURE ---"
+            cat release/apk-signature.txt
+            echo "--- BADGING ---"
+            head -n 80 release/apk-badging.txt
+          } | tee release/verification-summary.txt
+          [ "$apk_exists" -eq 0 ] || exit 20
+          [ "$zip_status" -eq 0 ] || exit 21
+          [ "$sig_status" -eq 0 ] || exit 22
+          [ "$aapt_status" -eq 0 ] || exit 23
+          grep -q "package: name='dk.ruko.lpfhdeal' versionCode='12' versionName='1.1.1'" release/apk-badging.txt || exit 24
+          grep -q "sdkVersion:'26'" release/apk-badging.txt || exit 25
+          grep -q "targetSdkVersion:'35'" release/apk-badging.txt || exit 26
+          grep -Eq "Verified using v(2|3|3\.1|4) scheme.*: true" release/apk-signature.txt || exit 27
+          grep -q "Verification succesful" release/zipalign.txt || exit 28
+          grep -q 'da-DK-ChristelNeural' release/onboarding-voice.txt || exit 29
+          exit 0
 
-      - name: Upload fixed APK artifact
+      - name: Upload installable v1.1.1 test APK
         if: steps.compile.outputs.status == '0'
         uses: actions/upload-artifact@v4
         with:
-          name: Ondskabens-Skov-Install-Fix
-          path: dist/
+          name: LPFH-Deal-Cockpit-v1.1.1-Test-APK
+          path: /tmp/lpfh-project/release/
           if-no-files-found: error
           retention-days: 30
 
@@ -134,12 +178,11 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Ondskabens-Skov-Install-Fix-Diagnostics
+          name: LPFH-Deal-Cockpit-v1.1.1-Diagnostics
           path: |
-            build.log
-            build-summary.txt
-            apk-signature.txt
-            apk-badging.txt
+            /tmp/lpfh-project/build.log
+            /tmp/lpfh-project/build-summary.txt
+            /tmp/lpfh-project/release/
           if-no-files-found: warn
           retention-days: 7
 
