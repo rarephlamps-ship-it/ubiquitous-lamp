@@ -1,4 +1,4 @@
-run_id=32102625563
+run_id=32102927100
 run_attempt=1
-job_status=failure
-head_sha=aef2864d67395de9da2062aca5cc90b4ab71eb8f
+job_status=success
+head_sha=bc7f3e7ba05b4f270dbfa79941203c2f8e26650f
