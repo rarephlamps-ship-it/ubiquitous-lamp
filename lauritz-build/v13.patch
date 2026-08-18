@@ -205,6 +205,27 @@ index 0000000..b252ac8
 +        )
 +    }
 +}
+diff --git a/app/src/test/java/dk/ruko/lauritz/data/intelligence/DatabaseIdentityTest.kt b/app/src/test/java/dk/ruko/lauritz/data/intelligence/DatabaseIdentityTest.kt
+new file mode 100644
+index 0000000..72e7ba4
+--- /dev/null
++++ b/app/src/test/java/dk/ruko/lauritz/data/intelligence/DatabaseIdentityTest.kt
+@@ -0,0 +1,15 @@
++package dk.ruko.lauritz.data.intelligence
++
++import dk.ruko.lauritz.data.analyst.AnalystDatabase
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertNotEquals
++import org.junit.Test
++
++class DatabaseIdentityTest {
++    @Test
++    fun analystAndIntelligenceDatabasesArePhysicallyNamedSeparately() {
++        assertEquals("analyst.sqlite", AnalystDatabase.NAME)
++        assertEquals("intelligence.sqlite", IntelligenceDatabase.NAME)
++        assertNotEquals(AnalystDatabase.NAME, IntelligenceDatabase.NAME)
++    }
++}
 diff --git a/app/src/test/java/dk/ruko/lauritz/intelligence/model/IntelligenceJsonTest.kt b/app/src/test/java/dk/ruko/lauritz/intelligence/model/IntelligenceJsonTest.kt
 new file mode 100644
 index 0000000..0ec4a62
