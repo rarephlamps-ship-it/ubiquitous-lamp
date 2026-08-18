@@ -1,0 +1,60 @@
+diff --git a/app/src/test/java/dk/ruko/lauritz/data/intelligence/ConclusionHistoryPolicyTest.kt b/app/src/test/java/dk/ruko/lauritz/data/intelligence/ConclusionHistoryPolicyTest.kt
+index b252ac8..072c095 100644
+--- a/app/src/test/java/dk/ruko/lauritz/data/intelligence/ConclusionHistoryPolicyTest.kt
++++ b/app/src/test/java/dk/ruko/lauritz/data/intelligence/ConclusionHistoryPolicyTest.kt
+@@ -40,4 +40,33 @@ class ConclusionHistoryPolicyTest {
+             supersedesConclusionId = null
+         )
+     }
++    @Test
++    fun learningDaoHasNoConclusionUpdateApi() {
++        val forbidden = LearningDao::class.java.methods.filter { method ->
++            method.name == "updateConclusion" ||
++                method.parameterTypes.any { it == dk.ruko.lauritz.data.intelligence.entities.AiConclusionEntity::class.java } &&
++                method.name.startsWith("update", ignoreCase = true)
++        }
++        assertTrue(forbidden.isEmpty())
++    }
++
++    @Test
++    fun conclusionDraftAllowsNoSupersededConclusion() {
++        val draft = ConclusionDraft(
++            datasetId = "dataset",
++            lotId = "lot",
++            analysisRunId = 1L,
++            conclusion = AiConclusionClass.INCONCLUSIVE,
++            fakeProbability = 0.5,
++            confidence = 0.5,
++            evidenceQuality = 0.5,
++            anomalyScore = 0.5,
++            relistingProbability = null,
++            explanationJson = "{}",
++            referenceIdsJson = "[]",
++            supersedesConclusionId = null
++        )
++        assertEquals(null, draft.supersedesConclusionId)
++    }
++
+ }
+diff --git a/app/src/test/java/dk/ruko/lauritz/data/intelligence/KnowledgeVersionPolicyTest.kt b/app/src/test/java/dk/ruko/lauritz/data/intelligence/KnowledgeVersionPolicyTest.kt
+new file mode 100644
+index 0000000..46f6396
+--- /dev/null
++++ b/app/src/test/java/dk/ruko/lauritz/data/intelligence/KnowledgeVersionPolicyTest.kt
+@@ -0,0 +1,16 @@
++package dk.ruko.lauritz.data.intelligence
++
++import org.junit.Assert.assertEquals
++import org.junit.Test
++
++class KnowledgeVersionPolicyTest {
++    @Test
++    fun learnedComparisonAdvancesExactlyOneVersion() {
++        assertEquals(42L, KnowledgeVersionPolicy.next(41L, learnedSomething = true))
++    }
++
++    @Test
++    fun idempotentComparisonDoesNotInventVersion() {
++        assertEquals(41L, KnowledgeVersionPolicy.next(41L, learnedSomething = false))
++    }
++}
