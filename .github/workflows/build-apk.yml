@@ -1,4 +1,4 @@
-name: Build LPFH Deal Cockpit v1.1 Test APK
+name: Build LPFH Deal Cockpit v1.1.1 Test APK
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build:
-    name: Build and verify installable LPFH v1.1 test APK
+    name: Build and verify installable LPFH v1.1.1 test APK
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -33,34 +33,38 @@ jobs:
           test -f /tmp/lpfh-project/dist/index.html
           test -f /tmp/lpfh-project/dist/src/app.js
 
-      - name: Apply v1.1.0 final UI patch and verify payload
+      - name: Apply v1.1.1 UI and version patch
         shell: bash
         run: |
           set -euo pipefail
           chmod +x patch-v110/apply-v110.sh
           ./patch-v110/apply-v110.sh /tmp/lpfh-project
-          grep -q '"version": "1.1.0"' /tmp/lpfh-project/dist/BUILD_INFO.json
-          grep -q "versionName '1.1.0'" /tmp/lpfh-project/android/app/build.gradle
-          grep -q 'versionCode 11' /tmp/lpfh-project/android/app/build.gradle
+          grep -q '"version": "1.1.1"' /tmp/lpfh-project/dist/BUILD_INFO.json
+          grep -q "versionName '1.1.1'" /tmp/lpfh-project/android/app/build.gradle
+          grep -q 'versionCode 12' /tmp/lpfh-project/android/app/build.gradle
 
-      - name: Generate local Danish onboarding voice
+      - name: Generate calm Danish female onboarding voice
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq espeak ffmpeg
+          python3 -m pip install --disable-pip-version-check --quiet edge-tts
           cd /tmp/lpfh-project
-          TEXT='Denne app samler værdiansættelse, evidensoversigt og forhandlingsscenarier i ét cockpit. Juster aktiver, rettigheder, retainere og success fee og se den samlede dealværdi med det samme. Evidensoversigten viser readiness, nøglefund og status på de centrale spor. Gem tilbud og modbud, sammenlign scenarier og opret låste snapshots til møder og forhandling. I præsentationstilstand vises kun de oplysninger, du vil dele med køberen. Eksportér snapshots som PDF, JSON eller CSV og brug appen både som værktøj og præsentation.'
-          mkdir -p dist/public/onboarding
-          espeak -v da -s 240 -w /tmp/lpfh-voice.wav "$TEXT"
-          ffmpeg -loglevel error -y -i /tmp/lpfh-voice.wav -codec:a libmp3lame -q:a 4 dist/public/onboarding/voice-da.mp3
+          TEXT='LP/FH Deal & Evidence Cockpit samler værdiansættelse, evidens, auktionsdata og forhandlingsscenarier i ét sikkert værktøj. Potentialet ligger i kombinationen af flere systemer. Lauritz- og Bruun Rasmussen-databaserne kan bruges til at sammenligne store mængder objekter, finde relistings, gentagelser, mønstre og mulige provenance-problemer. Evidence-modulet samler fund, styrke, gaps og dokumentation, mens valuation-motoren kan beregne salgs-, licens-, retainer- og recovery-scenarier. Sammen med OSINT-platformen og AI-understøttede workflows kan løsningen forkorte arbejdet fra rå data til en struktureret sag og et beslutningsgrundlag. Det giver et betydeligt anvendelsespotentiale inden for brand protection, markedsovervågning, auktionsanalyse og rettighedshaverarbejde. Appen gør det muligt at præsentere potentialet samlet, sikkert og offline, fra evidens til økonomisk beslutning. Alle værdier og potentialevurderinger er scenarier og afhænger af datakvalitet, rettigheder og den konkrete anvendelse.'
+          VOICE='da-DK-ChristelNeural'
+          mkdir -p dist/public/onboarding release
+          edge-tts --list-voices | grep -q "$VOICE"
+          edge-tts --voice "$VOICE" --rate=-8% --text "$TEXT" --write-media dist/public/onboarding/voice-da.mp3
+          test -s dist/public/onboarding/voice-da.mp3
           duration=$(ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 dist/public/onboarding/voice-da.mp3)
           python3 - "$duration" <<'PY'
           import sys
           duration=float(sys.argv[1])
-          assert 15 <= duration <= 30, f"onboarding duration outside approved range: {duration}"
+          assert 45 <= duration <= 75, f"onboarding duration outside approved range: {duration}"
           print(f"ONBOARDING_DURATION={duration:.2f}s")
           PY
+          printf '%s\n' "$VOICE" > release/onboarding-voice.txt
+          printf '%s\n' "$duration" > release/onboarding-duration-seconds.txt
+          sha256sum dist/public/onboarding/voice-da.mp3 > release/onboarding-voice-da.mp3.sha256
 
       - name: Prepare Android WebView assets
         shell: bash
@@ -73,7 +77,7 @@ jobs:
           test -f android/app/src/main/assets/www/index.html
           test -f android/app/src/main/assets/www/src/app.js
           test -f android/app/src/main/assets/www/public/onboarding/voice-da.mp3
-          grep -q '"version": "1.1.0"' android/app/src/main/assets/www/BUILD_INFO.json
+          grep -q '"version": "1.1.1"' android/app/src/main/assets/www/BUILD_INFO.json
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -131,9 +135,9 @@ jobs:
           sig_status=$?
           "$BT/aapt" dump badging "$APK" > release/apk-badging.txt 2>&1
           aapt_status=$?
-          cp "$APK" "release/LPFH-Deal-Cockpit-v1.1.0-test.apk" 2>/dev/null || true
-          sha256sum "release/LPFH-Deal-Cockpit-v1.1.0-test.apk" > "release/LPFH-Deal-Cockpit-v1.1.0-test.apk.sha256" 2>/dev/null || true
-          ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 dist/public/onboarding/voice-da.mp3 > release/onboarding-duration-seconds.txt 2>/dev/null || true
+          cp "$APK" "release/LPFH-Deal-Cockpit-v1.1.1-test.apk" 2>/dev/null || true
+          sha256sum "release/LPFH-Deal-Cockpit-v1.1.1-test.apk" > "release/LPFH-Deal-Cockpit-v1.1.1-test.apk.sha256" 2>/dev/null || true
+          cp dist/public/onboarding/voice-da.mp3 release/voice-da.mp3 2>/dev/null || true
           {
             echo "APK_EXISTS_STATUS=$apk_exists"
             echo "ZIPALIGN_STATUS=$zip_status"
@@ -150,18 +154,19 @@ jobs:
           [ "$zip_status" -eq 0 ] || exit 21
           [ "$sig_status" -eq 0 ] || exit 22
           [ "$aapt_status" -eq 0 ] || exit 23
-          grep -q "package: name='dk.ruko.lpfhdeal' versionCode='11' versionName='1.1.0'" release/apk-badging.txt || exit 24
+          grep -q "package: name='dk.ruko.lpfhdeal' versionCode='12' versionName='1.1.1'" release/apk-badging.txt || exit 24
           grep -q "sdkVersion:'26'" release/apk-badging.txt || exit 25
           grep -q "targetSdkVersion:'35'" release/apk-badging.txt || exit 26
           grep -Eq "Verified using v(2|3|3\.1|4) scheme.*: true" release/apk-signature.txt || exit 27
           grep -q "Verification succesful" release/zipalign.txt || exit 28
+          grep -q 'da-DK-ChristelNeural' release/onboarding-voice.txt || exit 29
           exit 0
 
-      - name: Upload installable v1.1 test APK
+      - name: Upload installable v1.1.1 test APK
         if: steps.compile.outputs.status == '0'
         uses: actions/upload-artifact@v4
         with:
-          name: LPFH-Deal-Cockpit-v1.1.0-Test-APK
+          name: LPFH-Deal-Cockpit-v1.1.1-Test-APK
           path: /tmp/lpfh-project/release/
           if-no-files-found: error
           retention-days: 30
@@ -170,7 +175,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: LPFH-Deal-Cockpit-v1.1.0-Diagnostics
+          name: LPFH-Deal-Cockpit-v1.1.1-Diagnostics
           path: |
             /tmp/lpfh-project/build.log
             /tmp/lpfh-project/build-summary.txt
