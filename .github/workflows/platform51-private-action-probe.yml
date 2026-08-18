@@ -1,0 +1,20 @@
+name: Platform51 private action probe
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - platform51-windows-carrier
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: windows-2025
+    steps:
+      - name: Call private OSINT-Nexus action
+        uses: rarephlamps-ship-it/OSINT-Nexus/.github/actions/platform51-private-carrier@46ff1716dedd8e23cf53a67655b9819ad37a6d37
