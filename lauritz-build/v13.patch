@@ -46,20 +46,130 @@ index 0000000..ab1b970
 +        .digest(value.toByteArray(Charsets.UTF_8))
 +        .joinToString("") { "%02x".format(it) }
 +}
+diff --git a/app/src/main/java/dk/ruko/lauritz/intelligence/model/IntelligenceTypes.kt b/app/src/main/java/dk/ruko/lauritz/intelligence/model/IntelligenceTypes.kt
+new file mode 100644
+index 0000000..de98386
+--- /dev/null
++++ b/app/src/main/java/dk/ruko/lauritz/intelligence/model/IntelligenceTypes.kt
+@@ -0,0 +1,104 @@
++package dk.ruko.lauritz.intelligence.model
++
++import kotlinx.serialization.Serializable
++
++@Serializable enum class ExecutionLocation { LOCAL, CLOUD }
++@Serializable enum class AnalysisRunType { INDEX, COMPARE, MARK_SCAN, RELISTING_SCAN, REANALYSIS, CLOUD_ANALYSIS }
++@Serializable enum class AnalysisRunStatus { QUEUED, RUNNING, COMPLETE, FAILED, CANCELLED }
++@Serializable enum class FeatureSubjectType { LOT, IMAGE, MARK_REGION, OBJECT }
++@Serializable enum class FeatureKind { VISUAL, MARK, METADATA, RELATIONSHIP }
++@Serializable enum class SimilarityEdgeType { OBJECT_SIMILARITY, IMAGE_REUSE, MARK_SIMILARITY, RELISTING }
++@Serializable enum class ClusterType { OBJECT, IMAGE, MARK, RELISTING, PATTERN }
++@Serializable enum class MarkKind { STAMP, SIGNATURE, LABEL, SERIAL, ENGRAVING, CASTING_MARK, OTHER }
++@Serializable enum class RegionSelectionSource { AUTO, MANUAL, AUTO_EDITED }
++@Serializable enum class ReferenceScope { DATASET, GLOBAL }
++@Serializable enum class ReferenceType { OBJECT, MARK }
++@Serializable enum class ReferenceClassLabel { AUTHENTIC, FAKE, KNOWN_VARIANT, UNKNOWN }
++@Serializable enum class ReferenceReviewStatus { AI_CANDIDATE, ANALYST_REVIEWED, ANALYST_VERIFIED }
++@Serializable enum class ReferenceSourceKind { EVIDENCE, ANALYST_DERIVED_WEB, ANALYST_DERIVED_LOCAL, AI_DERIVED }
++@Serializable enum class AiConclusionClass { LIKELY_AUTHENTIC, LIKELY_FAKE, INCONCLUSIVE }
++@Serializable enum class AnalystConclusionStatus { UNREVIEWED, CONFIRMED, REJECTED, CORRECTED }
++@Serializable enum class FeedbackActionType {
++    OPEN, SAVE, COMPARE, RELEVANT, NOT_RELEVANT, VERIFY_AUTHENTIC, VERIFY_FAKE,
++    REJECT_CONCLUSION, PROMOTE_REFERENCE, DEMOTE_REFERENCE
++}
++@Serializable enum class LearningComponent { AUTHENTICITY, RELEVANCE, CLUSTERING, ANOMALY }
++@Serializable enum class OsintLeadType {
++    MARK_SEARCH, IMAGE_HISTORY, RELISTING_SEARCH, ENTITY_SEARCH, PROVENANCE_SEARCH, MANUFACTURER_SEARCH
++}
++@Serializable enum class OsintLeadStatus { SUGGESTED, DISMISSED, STARTED, COMPLETE }
++@Serializable enum class DisclosureMode { CROP_ONLY, FULL_IMAGE, METADATA_ONLY }
++@Serializable enum class WatchPatternType { MARK, OBJECT, METADATA, RELATIONSHIP, RELISTING }
++
++@Serializable
++data class ComparisonDraft(
++    val datasetId: String,
++    val subjectAType: FeatureSubjectType,
++    val subjectAId: String,
++    val subjectBType: FeatureSubjectType,
++    val subjectBId: String,
++    val similarityScore: Double,
++    val visualScore: Double?,
++    val markScore: Double?,
++    val metadataScore: Double?,
++    val relationshipScore: Double?,
++    val reasonJson: String,
++    val analysisRunId: Long
++) {
++    init {
++        requireUnitScore("similarityScore", similarityScore)
++        requireNullableUnitScore("visualScore", visualScore)
++        requireNullableUnitScore("markScore", markScore)
++        requireNullableUnitScore("metadataScore", metadataScore)
++        requireNullableUnitScore("relationshipScore", relationshipScore)
++    }
++}
++
++@Serializable
++data class ConclusionDraft(
++    val datasetId: String,
++    val lotId: String,
++    val analysisRunId: Long,
++    val conclusion: AiConclusionClass,
++    val fakeProbability: Double,
++    val confidence: Double,
++    val evidenceQuality: Double,
++    val anomalyScore: Double,
++    val relistingProbability: Double?,
++    val explanationJson: String,
++    val referenceIdsJson: String,
++    val supersedesConclusionId: Long?
++) {
++    init {
++        requireUnitScore("fakeProbability", fakeProbability)
++        requireUnitScore("confidence", confidence)
++        requireUnitScore("evidenceQuality", evidenceQuality)
++        requireUnitScore("anomalyScore", anomalyScore)
++        requireNullableUnitScore("relistingProbability", relistingProbability)
++    }
++}
++
++@Serializable
++data class KnowledgeAdvance(
++    val comparisonId: Long,
++    val beforeVersion: Long,
++    val afterVersion: Long
++)
++
++@Serializable
++data class ModelManifestEntry(
++    val modelId: String,
++    val component: String,
++    val version: String,
++    val implementationHash: String,
++    val providerId: String?,
++    val executionLocation: ExecutionLocation
++)
++
++private fun requireUnitScore(name: String, score: Double) {
++    require(score.isFinite() && score in 0.0..1.0) { "$name must be finite and in [0,1]" }
++}
++
++private fun requireNullableUnitScore(name: String, score: Double?) {
++    if (score != null) requireUnitScore(name, score)
++}
 diff --git a/app/src/test/java/dk/ruko/lauritz/data/intelligence/ConclusionHistoryPolicyTest.kt b/app/src/test/java/dk/ruko/lauritz/data/intelligence/ConclusionHistoryPolicyTest.kt
 new file mode 100644
-index 0000000..0042768
+index 0000000..b252ac8
 --- /dev/null
 +++ b/app/src/test/java/dk/ruko/lauritz/data/intelligence/ConclusionHistoryPolicyTest.kt
-@@ -0,0 +1,39 @@
+@@ -0,0 +1,43 @@
 +package dk.ruko.lauritz.data.intelligence
 +
 +import dk.ruko.lauritz.intelligence.model.AiConclusionClass
 +import dk.ruko.lauritz.intelligence.model.AnalystConclusionStatus
 +import dk.ruko.lauritz.intelligence.model.ConclusionDraft
++import org.junit.Assert.assertEquals
 +import org.junit.Assert.assertFalse
 +import org.junit.Assert.assertTrue
-+import org.junit.Assert.assertEquals
 +import org.junit.Test
 +
 +class ConclusionHistoryPolicyTest {
@@ -83,10 +193,14 @@ index 0000000..0042768
 +            datasetId = "dataset",
 +            lotId = "lot",
 +            analysisRunId = 1L,
-+            aiClass = AiConclusionClass.INCONCLUSIVE,
++            conclusion = AiConclusionClass.INCONCLUSIVE,
++            fakeProbability = 0.5,
 +            confidence = 1.01,
++            evidenceQuality = 0.5,
++            anomalyScore = 0.5,
++            relistingProbability = null,
 +            explanationJson = "{}",
-+            evidenceSummaryJson = "{}",
++            referenceIdsJson = "[]",
 +            supersedesConclusionId = null
 +        )
 +    }
