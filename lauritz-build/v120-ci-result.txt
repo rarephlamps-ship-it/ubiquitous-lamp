@@ -1,0 +1,4 @@
+run_id=32093575864
+run_attempt=1
+job_status=failure
+head_sha=c4e368e5e716c5d132cabe71fc1673769f16144f
