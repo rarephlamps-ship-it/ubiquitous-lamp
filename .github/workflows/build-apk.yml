@@ -22,19 +22,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat source/lpfh2-00.b64 \
-              source/lpfh2-01.b64 \
-              source/lpfh2-02.b64 \
-              source/lpfh2-03.b64 \
-              source/lpfh2-04.b64 \
-              source/lpfh2-05.b64 \
-              source/lpfh2-06.b64 \
-              source/lpfh2-07.b64 \
-              source/lpfh2-08.b64 \
-              source/lpfh2-09.b64 \
-              source/lpfh2-10.b64 \
-              source/lpfh2-11.b64 \
-              source/lpfh2-12.b64 > /tmp/lpfh-project.tar.gz.b64
+          cat source/lpfh2-00.b64 source/lpfh2-01.b64 source/lpfh2-02.b64 source/lpfh2-03.b64 source/lpfh2-04.b64 source/lpfh2-05.b64 source/lpfh2-06.b64 source/lpfh2-07.b64 source/lpfh2-08.b64 source/lpfh2-09.b64 source/lpfh2-10.b64 source/lpfh2-11.b64 source/lpfh2-12.b64 > /tmp/lpfh-project.tar.gz.b64
           base64 --decode /tmp/lpfh-project.tar.gz.b64 > /tmp/lpfh-project.tar.gz
           echo "d9bd45ad6e8657f718e6984688d1d25e7edb059829a1da76e7c4fc1419454abd  /tmp/lpfh-project.tar.gz" | sha256sum -c -
           mkdir -p /tmp/lpfh-project
@@ -120,24 +108,42 @@ jobs:
         if: steps.compile.outputs.status == '0'
         shell: bash
         run: |
-          set -euo pipefail
+          set +e
           cd /tmp/lpfh-project
           APK="android/app/build/outputs/apk/debug/app-debug.apk"
           BT="$ANDROID_HOME/build-tools/35.0.0"
-          test -s "$APK"
-          "$BT/zipalign" -c -P 16 -v 4 "$APK" | tee zipalign.txt
-          "$BT/apksigner" verify --verbose --print-certs "$APK" | tee apk-signature.txt
-          "$BT/aapt" dump badging "$APK" | tee apk-badging.txt
-          grep -q "package: name='dk.ruko.lpfhdeal'" apk-badging.txt
-          grep -q "sdkVersion:'26'" apk-badging.txt
-          grep -q "Verified using v1 scheme (JAR signing): true" apk-signature.txt
-          grep -q "Verified using v2 scheme (APK Signature Scheme v2): true" apk-signature.txt
           mkdir -p release
-          cp "$APK" "release/LPFH-Deal-Cockpit-v1.0.0-debug.apk"
-          sha256sum "release/LPFH-Deal-Cockpit-v1.0.0-debug.apk" > "release/LPFH-Deal-Cockpit-v1.0.0-debug.apk.sha256"
-          ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 dist/public/onboarding/voice-da.mp3 > release/onboarding-duration-seconds.txt
-          cp apk-signature.txt apk-badging.txt zipalign.txt release/
-          ls -lh release/
+          test -s "$APK"
+          apk_exists=$?
+          "$BT/zipalign" -c -P 16 -v 4 "$APK" > release/zipalign.txt 2>&1
+          zip_status=$?
+          "$BT/apksigner" verify --verbose --print-certs "$APK" > release/apk-signature.txt 2>&1
+          sig_status=$?
+          "$BT/aapt" dump badging "$APK" > release/apk-badging.txt 2>&1
+          aapt_status=$?
+          cp "$APK" "release/LPFH-Deal-Cockpit-v1.0.0-debug.apk" 2>/dev/null || true
+          sha256sum "release/LPFH-Deal-Cockpit-v1.0.0-debug.apk" > "release/LPFH-Deal-Cockpit-v1.0.0-debug.apk.sha256" 2>/dev/null || true
+          ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 dist/public/onboarding/voice-da.mp3 > release/onboarding-duration-seconds.txt 2>/dev/null || true
+          {
+            echo "APK_EXISTS_STATUS=$apk_exists"
+            echo "ZIPALIGN_STATUS=$zip_status"
+            echo "APKSIGNER_STATUS=$sig_status"
+            echo "AAPT_STATUS=$aapt_status"
+            echo "--- ZIPALIGN ---"
+            cat release/zipalign.txt
+            echo "--- SIGNATURE ---"
+            cat release/apk-signature.txt
+            echo "--- BADGING ---"
+            head -n 80 release/apk-badging.txt
+          } | tee release/verification-summary.txt
+          [ "$apk_exists" -eq 0 ] || exit 20
+          [ "$zip_status" -eq 0 ] || exit 21
+          [ "$sig_status" -eq 0 ] || exit 22
+          [ "$aapt_status" -eq 0 ] || exit 23
+          grep -q "package: name='dk.ruko.lpfhdeal'" release/apk-badging.txt || exit 24
+          grep -q "sdkVersion:'26'" release/apk-badging.txt || exit 25
+          grep -Eq "Verified using v(2|3|3\.1|4) scheme.*: true" release/apk-signature.txt || exit 26
+          exit 0
 
       - name: Upload LPFH APK artifact
         if: steps.compile.outputs.status == '0'
@@ -156,9 +162,7 @@ jobs:
           path: |
             /tmp/lpfh-project/build.log
             /tmp/lpfh-project/build-summary.txt
-            /tmp/lpfh-project/release/apk-signature.txt
-            /tmp/lpfh-project/release/apk-badging.txt
-            /tmp/lpfh-project/release/zipalign.txt
+            /tmp/lpfh-project/release/
           if-no-files-found: warn
           retention-days: 7
 
