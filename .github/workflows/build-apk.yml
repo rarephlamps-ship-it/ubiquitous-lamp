@@ -36,7 +36,7 @@ jobs:
               source/lpfh2-11.b64 \
               source/lpfh2-12.b64 > /tmp/lpfh-project.tar.gz.b64
           base64 --decode /tmp/lpfh-project.tar.gz.b64 > /tmp/lpfh-project.tar.gz
-          echo "d9bd0c1333d449b879bbc4a74e2b895b10011f5448a4d792cc2186aba425b8a1  /tmp/lpfh-project.tar.gz" | sha256sum -c -
+          echo "d9bd45ad6e8657f718e6984688d1d25e7edb059829a1da76e7c4fc1419454abd  /tmp/lpfh-project.tar.gz" | sha256sum -c -
           mkdir -p /tmp/lpfh-project
           tar -xzf /tmp/lpfh-project.tar.gz -C /tmp/lpfh-project
           test -f /tmp/lpfh-project/android/settings.gradle
