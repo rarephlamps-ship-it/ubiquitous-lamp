@@ -49,8 +49,13 @@ jobs:
           if grep -q '^diff --git ' lauritz-build/v13.patch; then
             patch -d lauritz-app -p1 < lauritz-build/v13.patch
           else
-            echo "No v1.3 working patch yet"
+            echo "No v1.3 base patch yet"
           fi
+          shopt -s nullglob
+          for incremental_patch in lauritz-build/v13-step*.patch; do
+            echo "Applying $incremental_patch"
+            patch -d lauritz-app -p1 < "$incremental_patch"
+          done
 
           grep -q 'versionName = "1.2.0"' lauritz-app/app/build.gradle.kts
           grep -q 'versionCode = 4' lauritz-app/app/build.gradle.kts
