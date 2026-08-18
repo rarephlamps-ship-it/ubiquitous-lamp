@@ -46,6 +46,51 @@ index 0000000..ab1b970
 +        .digest(value.toByteArray(Charsets.UTF_8))
 +        .joinToString("") { "%02x".format(it) }
 +}
+diff --git a/app/src/test/java/dk/ruko/lauritz/data/intelligence/ConclusionHistoryPolicyTest.kt b/app/src/test/java/dk/ruko/lauritz/data/intelligence/ConclusionHistoryPolicyTest.kt
+new file mode 100644
+index 0000000..0042768
+--- /dev/null
++++ b/app/src/test/java/dk/ruko/lauritz/data/intelligence/ConclusionHistoryPolicyTest.kt
+@@ -0,0 +1,39 @@
++package dk.ruko.lauritz.data.intelligence
++
++import dk.ruko.lauritz.intelligence.model.AiConclusionClass
++import dk.ruko.lauritz.intelligence.model.AnalystConclusionStatus
++import dk.ruko.lauritz.intelligence.model.ConclusionDraft
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertTrue
++import org.junit.Assert.assertEquals
++import org.junit.Test
++
++class ConclusionHistoryPolicyTest {
++    @Test
++    fun aiConclusionVocabularyIsFixed() {
++        assertEquals(
++            setOf("LIKELY_AUTHENTIC", "LIKELY_FAKE", "INCONCLUSIVE"),
++            AiConclusionClass.entries.map { it.name }.toSet()
++        )
++    }
++
++    @Test
++    fun analystStatusIsSeparateFromAiClass() {
++        assertTrue("CONFIRMED" in AnalystConclusionStatus.entries.map { it.name })
++        assertFalse("CONFIRMED" in AiConclusionClass.entries.map { it.name })
++    }
++
++    @Test(expected = IllegalArgumentException::class)
++    fun conclusionDraftRejectsConfidenceAboveOne() {
++        ConclusionDraft(
++            datasetId = "dataset",
++            lotId = "lot",
++            analysisRunId = 1L,
++            aiClass = AiConclusionClass.INCONCLUSIVE,
++            confidence = 1.01,
++            explanationJson = "{}",
++            evidenceSummaryJson = "{}",
++            supersedesConclusionId = null
++        )
++    }
++}
 diff --git a/app/src/test/java/dk/ruko/lauritz/intelligence/model/IntelligenceJsonTest.kt b/app/src/test/java/dk/ruko/lauritz/intelligence/model/IntelligenceJsonTest.kt
 new file mode 100644
 index 0000000..0ec4a62
