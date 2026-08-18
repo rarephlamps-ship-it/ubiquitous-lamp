@@ -34,6 +34,9 @@ jobs:
 
           xz -dc v11.patch.xz > v11.patch
           xz -dc v12.patch.xz > v12.patch
+          awk 'BEGIN{skip=0} /^diff --git a\/README.md b\/README.md/{skip=1; next} /^diff --git /{if(skip){skip=0}} !skip{print}' v12.patch > v12-app.patch
+          ! grep -q '^diff --git a/README.md b/README.md' v12-app.patch
+
           rm -rf lauritz-app && mkdir lauritz-app
           tar -xJf lauritz-build-src.tar.xz -C lauritz-app
           patch -d lauritz-app -p1 < lauritz-build/fix-001.patch
@@ -41,7 +44,7 @@ jobs:
           patch -d lauritz-app -p1 < lauritz-build/fix-v11-001.patch
           grep -q 'versionName = "1.1.0"' lauritz-app/app/build.gradle.kts
           grep -q 'versionCode = 2' lauritz-app/app/build.gradle.kts
-          patch -d lauritz-app -p1 < v12.patch
+          patch -d lauritz-app -p1 < v12-app.patch
 
           grep -q 'versionName = "1.2.0"' lauritz-app/app/build.gradle.kts
           grep -q 'versionCode = 4' lauritz-app/app/build.gradle.kts
