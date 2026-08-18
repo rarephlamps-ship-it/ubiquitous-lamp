@@ -30,9 +30,10 @@ jobs:
           test -f /tmp/lpfh-project/android/settings.gradle
           test -f /tmp/lpfh-project/android/app/build.gradle
           test -f /tmp/lpfh-project/android/app/src/main/AndroidManifest.xml
-          test -f /tmp/lpfh-project/src/app.js
+          test -f /tmp/lpfh-project/dist/index.html
+          test -f /tmp/lpfh-project/dist/src/app.js
 
-      - name: Apply v1.1.0 final UI patch and run app tests
+      - name: Apply v1.1.0 final UI patch and verify payload
         shell: bash
         run: |
           set -euo pipefail
