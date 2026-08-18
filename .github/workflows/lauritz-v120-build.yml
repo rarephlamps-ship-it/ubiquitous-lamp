@@ -52,7 +52,7 @@ jobs:
           grep -q 'lot_attributes' lauritz-app/app/src/main/java/dk/ruko/lauritz/data/evidence/LauritzSchema.kt
           test -f lauritz-app/app/src/main/java/dk/ruko/lauritz/data/evidence/LotAttributeRepository.kt
           test -f lauritz-app/app/src/main/java/dk/ruko/lauritz/data/visual/VisualImageResolver.kt
-          test -f lauritz-app/app/src/main/java/dk/ruko/lauritz/ui/visual/ImageViewerScreen.kt
+          test -f lauritz-app/app/src/main/java/dk/ruko/lauritz/ui/image/ImageViewerScreen.kt
 
       - name: Use preinstalled Java 17
         shell: bash
