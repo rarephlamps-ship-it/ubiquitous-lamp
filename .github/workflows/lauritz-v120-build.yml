@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -128,3 +128,20 @@ jobs:
             lauritz-app/app/build/reports/lint-results-debug.*
           if-no-files-found: warn
           retention-days: 14
+
+      - name: Record CI run id and status
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > lauritz-build/v120-ci-result.txt <<EOF
+          run_id=${GITHUB_RUN_ID}
+          run_attempt=${GITHUB_RUN_ATTEMPT}
+          job_status=${{ job.status }}
+          head_sha=${GITHUB_SHA}
+          EOF
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add lauritz-build/v120-ci-result.txt
+          git commit -m "ci: record v1.2.0 result [skip ci]" || exit 0
+          git push origin HEAD:lauritz-v120-build
