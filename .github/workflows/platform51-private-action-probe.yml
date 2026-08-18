@@ -1,6 +1,9 @@
 name: Platform51 private action probe
 
 on:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
       - platform51-windows-carrier
