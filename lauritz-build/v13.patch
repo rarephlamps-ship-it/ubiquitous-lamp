@@ -1,0 +1,1022 @@
+diff --git a/app/build.gradle.kts b/app/build.gradle.kts
+index 68c4ed1..9884b6e 100644
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -3,6 +3,7 @@ plugins {
+     id("org.jetbrains.kotlin.android")
+     id("org.jetbrains.kotlin.plugin.compose")
+     id("org.jetbrains.kotlin.kapt")
++    id("org.jetbrains.kotlin.plugin.serialization")
+ }
+ 
+ android {
+@@ -57,6 +58,7 @@ dependencies {
+ 
+     implementation("androidx.room:room-runtime:2.8.4")
+     implementation("androidx.room:room-ktx:2.8.4")
++    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+     kapt("androidx.room:room-compiler:2.8.4")
+ 
+     testImplementation("junit:junit:4.13.2")
+diff --git a/app/src/main/java/dk/ruko/lauritz/data/analyst/AnalystDatabase.kt b/app/src/main/java/dk/ruko/lauritz/data/analyst/AnalystDatabase.kt
+index 671eaa4..4a5d735 100644
+--- a/app/src/main/java/dk/ruko/lauritz/data/analyst/AnalystDatabase.kt
++++ b/app/src/main/java/dk/ruko/lauritz/data/analyst/AnalystDatabase.kt
+@@ -59,6 +59,7 @@ abstract class AnalystDatabase : RoomDatabase() {
+     abstract fun webFindings(): WebFindingDao
+ 
+     companion object {
++        const val NAME = "analyst.sqlite"
+         @Volatile private var instance: AnalystDatabase? = null
+         val MIGRATION_1_2 = object : androidx.room.migration.Migration(1,2) {
+             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+@@ -67,7 +68,7 @@ abstract class AnalystDatabase : RoomDatabase() {
+             }
+         }
+         fun get(context: Context): AnalystDatabase = instance ?: synchronized(this) {
+-            instance ?: Room.databaseBuilder(context.applicationContext, AnalystDatabase::class.java, "analyst.sqlite").addMigrations(MIGRATION_1_2).build().also { instance = it }
++            instance ?: Room.databaseBuilder(context.applicationContext, AnalystDatabase::class.java, NAME).addMigrations(MIGRATION_1_2).build().also { instance = it }
+         }
+     }
+ }
+diff --git a/app/src/main/java/dk/ruko/lauritz/data/intelligence/IntelligenceDaos.kt b/app/src/main/java/dk/ruko/lauritz/data/intelligence/IntelligenceDaos.kt
+new file mode 100644
+index 0000000..67352d4
+--- /dev/null
++++ b/app/src/main/java/dk/ruko/lauritz/data/intelligence/IntelligenceDaos.kt
+@@ -0,0 +1,127 @@
++package dk.ruko.lauritz.data.intelligence
++
++import androidx.room.Dao
++import androidx.room.Insert
++import androidx.room.OnConflictStrategy
++import androidx.room.Query
++import androidx.room.Update
++import dk.ruko.lauritz.data.intelligence.entities.*
++
++@Dao
++interface KnowledgeDao {
++    @Query("SELECT * FROM dataset_knowledge WHERE datasetId=:datasetId")
++    suspend fun dataset(datasetId: String): DatasetKnowledgeEntity?
++
++    @Insert(onConflict = OnConflictStrategy.IGNORE)
++    suspend fun insertDataset(row: DatasetKnowledgeEntity): Long
++
++    @Update
++    suspend fun updateDataset(row: DatasetKnowledgeEntity)
++
++    @Insert
++    suspend fun insertSnapshot(row: KnowledgeSnapshotEntity): Long
++
++    @Insert(onConflict = OnConflictStrategy.REPLACE)
++    suspend fun upsertModel(row: ModelRegistryEntryEntity)
++
++    @Insert
++    suspend fun insertRun(row: AnalysisRunEntity): Long
++
++    @Query("SELECT * FROM analysis_runs WHERE id=:id")
++    suspend fun run(id: Long): AnalysisRunEntity?
++
++    @Update
++    suspend fun updateRun(row: AnalysisRunEntity)
++}
++
++@Dao
++interface FeatureDao {
++    @Insert(onConflict = OnConflictStrategy.IGNORE)
++    suspend fun insertFeature(row: FeatureVectorEntity): Long
++
++    @Query("""
++        SELECT * FROM feature_vectors
++        WHERE inputSha256=:sha AND extractorId=:extractorId
++          AND extractorVersion=:version AND featureKind=:kind
++        LIMIT 1
++    """)
++    suspend fun featureByContent(
++        sha: String,
++        extractorId: String,
++        version: String,
++        kind: String
++    ): FeatureVectorEntity?
++
++    @Insert
++    suspend fun insertFingerprint(row: ObjectFingerprintEntity): Long
++
++    @Insert
++    suspend fun insertComparison(row: ComparisonEventEntity): Long
++
++    @Insert(onConflict = OnConflictStrategy.REPLACE)
++    suspend fun upsertSimilarity(row: SimilarityEdgeEntity)
++}
++
++@Dao
++interface ClusterDao {
++    @Insert
++    suspend fun insertCluster(row: ClusterEntity): Long
++
++    @Insert(onConflict = OnConflictStrategy.REPLACE)
++    suspend fun upsertMember(row: ClusterMemberEntity)
++
++    @Insert
++    suspend fun insertWatchPattern(row: WatchPatternEntity): Long
++
++    @Update
++    suspend fun updateWatchPattern(row: WatchPatternEntity)
++}
++
++@Dao
++interface LearningDao {
++    @Insert
++    suspend fun insertConclusion(row: AiConclusionEntity): Long
++
++    @Query("SELECT * FROM ai_conclusions WHERE id=:id")
++    suspend fun conclusion(id: Long): AiConclusionEntity?
++
++    @Query("""
++        SELECT * FROM ai_conclusions
++        WHERE datasetId=:datasetId AND lotId=:lotId
++        ORDER BY createdUtc DESC,id DESC LIMIT 1
++    """)
++    suspend fun latestConclusion(datasetId: String, lotId: String): AiConclusionEntity?
++
++    @Insert
++    suspend fun insertFeedback(row: FeedbackEventEntity): Long
++
++    @Insert(onConflict = OnConflictStrategy.REPLACE)
++    suspend fun upsertState(row: LearningStateEntity)
++}
++
++@Dao
++interface ReferenceDao {
++    @Insert
++    suspend fun insertMarkRegion(row: MarkRegionEntity): Long
++
++    @Insert
++    suspend fun insertReference(row: ReferenceEntryEntity): Long
++
++    @Query("SELECT * FROM reference_entries WHERE id=:id")
++    suspend fun reference(id: Long): ReferenceEntryEntity?
++
++    @Update
++    suspend fun updateReference(row: ReferenceEntryEntity)
++}
++
++@Dao
++interface ExternalAuditDao {
++    @Insert
++    suspend fun insertOsintLead(row: OsintLeadEntity): Long
++
++    @Update
++    suspend fun updateOsintLead(row: OsintLeadEntity)
++
++    @Insert
++    suspend fun insertCloudTransmission(row: CloudTransmissionEntity): Long
++}
+diff --git a/app/src/main/java/dk/ruko/lauritz/data/intelligence/IntelligenceDatabase.kt b/app/src/main/java/dk/ruko/lauritz/data/intelligence/IntelligenceDatabase.kt
+new file mode 100644
+index 0000000..50cb3b3
+--- /dev/null
++++ b/app/src/main/java/dk/ruko/lauritz/data/intelligence/IntelligenceDatabase.kt
+@@ -0,0 +1,54 @@
++package dk.ruko.lauritz.data.intelligence
++
++import android.content.Context
++import androidx.room.Database
++import androidx.room.Room
++import androidx.room.RoomDatabase
++import dk.ruko.lauritz.data.intelligence.entities.*
++
++@Database(
++    entities = [
++        DatasetKnowledgeEntity::class,
++        ModelRegistryEntryEntity::class,
++        AnalysisRunEntity::class,
++        KnowledgeSnapshotEntity::class,
++        FeatureVectorEntity::class,
++        ObjectFingerprintEntity::class,
++        ComparisonEventEntity::class,
++        SimilarityEdgeEntity::class,
++        ClusterEntity::class,
++        ClusterMemberEntity::class,
++        WatchPatternEntity::class,
++        AiConclusionEntity::class,
++        FeedbackEventEntity::class,
++        LearningStateEntity::class,
++        MarkRegionEntity::class,
++        ReferenceEntryEntity::class,
++        OsintLeadEntity::class,
++        CloudTransmissionEntity::class
++    ],
++    version = 1,
++    exportSchema = false
++)
++abstract class IntelligenceDatabase : RoomDatabase() {
++    abstract fun knowledge(): KnowledgeDao
++    abstract fun features(): FeatureDao
++    abstract fun clusters(): ClusterDao
++    abstract fun learning(): LearningDao
++    abstract fun references(): ReferenceDao
++    abstract fun externalAudit(): ExternalAuditDao
++
++    companion object {
++        const val NAME = "intelligence.sqlite"
++        @Volatile private var instance: IntelligenceDatabase? = null
++
++        fun get(context: Context): IntelligenceDatabase =
++            instance ?: synchronized(this) {
++                instance ?: Room.databaseBuilder(
++                    context.applicationContext,
++                    IntelligenceDatabase::class.java,
++                    NAME
++                ).build().also { instance = it }
++            }
++    }
++}
+diff --git a/app/src/main/java/dk/ruko/lauritz/data/intelligence/entities/ClusterEntities.kt b/app/src/main/java/dk/ruko/lauritz/data/intelligence/entities/ClusterEntities.kt
+new file mode 100644
+index 0000000..c9a27a5
+--- /dev/null
++++ b/app/src/main/java/dk/ruko/lauritz/data/intelligence/entities/ClusterEntities.kt
+@@ -0,0 +1,69 @@
++package dk.ruko.lauritz.data.intelligence.entities
++
++import androidx.room.Entity
++import androidx.room.Index
++import androidx.room.PrimaryKey
++import dk.ruko.lauritz.intelligence.model.ClusterType
++import dk.ruko.lauritz.intelligence.model.ReferenceScope
++import dk.ruko.lauritz.intelligence.model.WatchPatternType
++
++@Entity(
++    tableName = "clusters",
++    indices = [
++        Index(value = ["datasetId", "clusterType", "knowledgeVersion"]),
++        Index(value = ["datasetId", "createdUtc"])
++    ]
++)
++data class ClusterEntity(
++    @PrimaryKey(autoGenerate = true) val id: Long = 0,
++    val datasetId: String,
++    val clusterType: ClusterType,
++    val algorithmVersion: String,
++    val label: String?,
++    val summaryJson: String,
++    val knowledgeVersion: Long,
++    val createdUtc: Long
++)
++
++@Entity(
++    tableName = "cluster_members",
++    primaryKeys = ["clusterId", "subjectType", "subjectId"],
++    indices = [Index(value = ["subjectId"]), Index(value = ["independenceGroupKey"])]
++)
++data class ClusterMemberEntity(
++    val clusterId: Long,
++    val subjectType: String,
++    val subjectId: String,
++    val membershipScore: Double,
++    val independenceGroupKey: String
++) {
++    init { requireUnitScore("membershipScore", membershipScore) }
++}
++
++@Entity(
++    tableName = "watch_patterns",
++    indices = [
++        Index(value = ["scope", "datasetId", "enabled"]),
++        Index(value = ["referenceSubjectId"])
++    ]
++)
++data class WatchPatternEntity(
++    @PrimaryKey(autoGenerate = true) val id: Long = 0,
++    val scope: ReferenceScope,
++    val datasetId: String?,
++    val patternType: WatchPatternType,
++    val referenceSubjectId: String,
++    val threshold: Double,
++    val enabled: Boolean,
++    val createdUtc: Long,
++    val lastTriggeredUtc: Long?
++) {
++    init {
++        requireUnitScore("threshold", threshold)
++        require(scope != ReferenceScope.DATASET || datasetId != null) { "dataset-scoped watch pattern requires datasetId" }
++    }
++}
++
++private fun requireUnitScore(name: String, score: Double) {
++    require(score.isFinite() && score in 0.0..1.0) { "$name must be finite and in [0,1]" }
++}
+diff --git a/app/src/main/java/dk/ruko/lauritz/data/intelligence/entities/ExternalAuditEntities.kt b/app/src/main/java/dk/ruko/lauritz/data/intelligence/entities/ExternalAuditEntities.kt
+new file mode 100644
+index 0000000..3cd92b8
+--- /dev/null
++++ b/app/src/main/java/dk/ruko/lauritz/data/intelligence/entities/ExternalAuditEntities.kt
+@@ -0,0 +1,60 @@
++package dk.ruko.lauritz.data.intelligence.entities
++
++import androidx.room.Entity
++import androidx.room.Index
++import androidx.room.PrimaryKey
++import dk.ruko.lauritz.intelligence.model.DisclosureMode
++import dk.ruko.lauritz.intelligence.model.OsintLeadStatus
++import dk.ruko.lauritz.intelligence.model.OsintLeadType
++
++@Entity(
++    tableName = "osint_leads",
++    indices = [
++        Index(value = ["datasetId", "lotId", "status"]),
++        Index(value = ["datasetId", "leadType", "createdUtc"])
++    ]
++)
++data class OsintLeadEntity(
++    @PrimaryKey(autoGenerate = true) val id: Long = 0,
++    val datasetId: String,
++    val lotId: String?,
++    val leadType: OsintLeadType,
++    val queryText: String,
++    val reason: String,
++    val confidence: Double,
++    val status: OsintLeadStatus,
++    val createdUtc: Long,
++    val webComparisonSessionId: Long?
++) {
++    init { requireUnitScore("confidence", confidence) }
++}
++
++@Entity(
++    tableName = "cloud_transmissions",
++    indices = [
++        Index(value = ["analysisRunId", "sentUtc"]),
++        Index(value = ["providerId", "modelId"]),
++        Index(value = ["payloadSha256"])
++    ]
++)
++data class CloudTransmissionEntity(
++    @PrimaryKey(autoGenerate = true) val id: Long = 0,
++    val analysisRunId: Long,
++    val providerId: String,
++    val modelId: String,
++    val sourceImageSha256: String?,
++    val payloadSha256: String,
++    val payloadByteCount: Long,
++    val cropJson: String?,
++    val metadataKeysJson: String,
++    val disclosureMode: DisclosureMode,
++    val sentUtc: Long,
++    val responseSha256: String?,
++    val responseMetadataJson: String?
++) {
++    init { require(payloadByteCount >= 0) { "payloadByteCount must be non-negative" } }
++}
++
++private fun requireUnitScore(name: String, score: Double) {
++    require(score.isFinite() && score in 0.0..1.0) { "$name must be finite and in [0,1]" }
++}
+diff --git a/app/src/main/java/dk/ruko/lauritz/data/intelligence/entities/FeatureEntities.kt b/app/src/main/java/dk/ruko/lauritz/data/intelligence/entities/FeatureEntities.kt
+new file mode 100644
+index 0000000..7afc09d
+--- /dev/null
++++ b/app/src/main/java/dk/ruko/lauritz/data/intelligence/entities/FeatureEntities.kt
+@@ -0,0 +1,119 @@
++package dk.ruko.lauritz.data.intelligence.entities
++
++import androidx.room.Entity
++import androidx.room.Index
++import androidx.room.PrimaryKey
++import dk.ruko.lauritz.intelligence.model.FeatureKind
++import dk.ruko.lauritz.intelligence.model.FeatureSubjectType
++import dk.ruko.lauritz.intelligence.model.SimilarityEdgeType
++
++@Entity(
++    tableName = "feature_vectors",
++    indices = [
++        Index(value = ["datasetId", "subjectId"]),
++        Index(value = ["inputSha256", "extractorId", "extractorVersion", "featureKind"], unique = true)
++    ]
++)
++data class FeatureVectorEntity(
++    @PrimaryKey(autoGenerate = true) val id: Long = 0,
++    val datasetId: String,
++    val subjectType: FeatureSubjectType,
++    val subjectId: String,
++    val inputSha256: String,
++    val extractorId: String,
++    val extractorVersion: String,
++    val featureKind: FeatureKind,
++    val vectorBlob: ByteArray,
++    val quality: Double,
++    val createdUtc: Long
++) {
++    init { requireUnitScore("quality", quality) }
++}
++
++@Entity(
++    tableName = "object_fingerprints",
++    indices = [
++        Index(value = ["datasetId", "lotId", "knowledgeVersion"]),
++        Index(value = ["independenceGroupKey"])
++    ]
++)
++data class ObjectFingerprintEntity(
++    @PrimaryKey(autoGenerate = true) val id: Long = 0,
++    val datasetId: String,
++    val lotId: String,
++    val fingerprintVersion: String,
++    val imageFeatureIdsJson: String,
++    val metadataFeatureId: Long?,
++    val normalizedIdentityJson: String,
++    val independenceGroupKey: String,
++    val createdUtc: Long,
++    val knowledgeVersion: Long
++)
++
++@Entity(
++    tableName = "comparison_events",
++    indices = [
++        Index(value = ["datasetId", "createdUtc"]),
++        Index(value = ["datasetId", "subjectAId"]),
++        Index(value = ["datasetId", "subjectBId"]),
++        Index(value = ["analysisRunId"]),
++        Index(value = ["knowledgeVersionAfter"])
++    ]
++)
++data class ComparisonEventEntity(
++    @PrimaryKey(autoGenerate = true) val id: Long = 0,
++    val datasetId: String,
++    val subjectAType: String,
++    val subjectAId: String,
++    val subjectBType: String,
++    val subjectBId: String,
++    val similarityScore: Double,
++    val visualScore: Double?,
++    val markScore: Double?,
++    val metadataScore: Double?,
++    val relationshipScore: Double?,
++    val reasonJson: String,
++    val analysisRunId: Long,
++    val knowledgeVersionBefore: Long,
++    val knowledgeVersionAfter: Long,
++    val createdUtc: Long
++) {
++    init {
++        requireUnitScore("similarityScore", similarityScore)
++        requireNullableUnitScore("visualScore", visualScore)
++        requireNullableUnitScore("markScore", markScore)
++        requireNullableUnitScore("metadataScore", metadataScore)
++        requireNullableUnitScore("relationshipScore", relationshipScore)
++    }
++}
++
++@Entity(
++    tableName = "similarity_edges",
++    primaryKeys = ["datasetId", "leftSubjectId", "rightSubjectId", "edgeType"],
++    indices = [
++        Index(value = ["datasetId", "edgeType", "score"]),
++        Index(value = ["independenceGroupKey"]),
++        Index(value = ["knowledgeVersion"])
++    ]
++)
++data class SimilarityEdgeEntity(
++    val datasetId: String,
++    val leftSubjectId: String,
++    val rightSubjectId: String,
++    val edgeType: SimilarityEdgeType,
++    val score: Double,
++    val independenceGroupKey: String,
++    val featureVersion: String,
++    val knowledgeVersion: Long,
++    val createdUtc: Long
++) {
++    init { requireUnitScore("score", score) }
++}
++
++private fun requireUnitScore(name: String, score: Double) {
++    require(score.isFinite() && score in 0.0..1.0) { "$name must be finite and in [0,1]" }
++}
++
++private fun requireNullableUnitScore(name: String, score: Double?) {
++    if (score != null) requireUnitScore(name, score)
++}
+diff --git a/app/src/main/java/dk/ruko/lauritz/data/intelligence/entities/LearningEntities.kt b/app/src/main/java/dk/ruko/lauritz/data/intelligence/entities/LearningEntities.kt
+new file mode 100644
+index 0000000..e99593a
+--- /dev/null
++++ b/app/src/main/java/dk/ruko/lauritz/data/intelligence/entities/LearningEntities.kt
+@@ -0,0 +1,101 @@
++package dk.ruko.lauritz.data.intelligence.entities
++
++import androidx.room.Entity
++import androidx.room.Index
++import androidx.room.PrimaryKey
++import dk.ruko.lauritz.intelligence.model.AiConclusionClass
++import dk.ruko.lauritz.intelligence.model.AnalystConclusionStatus
++import dk.ruko.lauritz.intelligence.model.FeedbackActionType
++import dk.ruko.lauritz.intelligence.model.LearningComponent
++
++@Entity(
++    tableName = "ai_conclusions",
++    indices = [
++        Index(value = ["datasetId", "lotId", "createdUtc"]),
++        Index(value = ["datasetId", "conclusion"]),
++        Index(value = ["datasetId", "analystStatus"]),
++        Index(value = ["knowledgeVersion"])
++    ]
++)
++data class AiConclusionEntity(
++    @PrimaryKey(autoGenerate = true) val id: Long = 0,
++    val datasetId: String,
++    val lotId: String,
++    val analysisRunId: Long,
++    val conclusion: AiConclusionClass,
++    val fakeProbability: Double,
++    val confidence: Double,
++    val evidenceQuality: Double,
++    val anomalyScore: Double,
++    val relistingProbability: Double?,
++    val explanationJson: String,
++    val referenceIdsJson: String,
++    val knowledgeVersion: Long,
++    val createdUtc: Long,
++    val supersedesConclusionId: Long?,
++    val analystStatus: AnalystConclusionStatus,
++    val analystCorrection: String?
++) {
++    init {
++        requireUnitScore("fakeProbability", fakeProbability)
++        requireUnitScore("confidence", confidence)
++        requireUnitScore("evidenceQuality", evidenceQuality)
++        requireUnitScore("anomalyScore", anomalyScore)
++        requireNullableUnitScore("relistingProbability", relistingProbability)
++    }
++}
++
++@Entity(
++    tableName = "feedback_events",
++    indices = [
++        Index(value = ["datasetId", "lotId", "createdUtc"]),
++        Index(value = ["actionType", "explicit"]),
++        Index(value = ["subjectId"])
++    ]
++)
++data class FeedbackEventEntity(
++    @PrimaryKey(autoGenerate = true) val id: Long = 0,
++    val datasetId: String?,
++    val lotId: String?,
++    val subjectType: String?,
++    val subjectId: String?,
++    val actionType: FeedbackActionType,
++    val explicit: Boolean,
++    val payloadJson: String,
++    val learningWeight: Double,
++    val createdUtc: Long
++) {
++    init { require(learningWeight.isFinite() && learningWeight >= 0.0) { "learningWeight must be finite and non-negative" } }
++}
++
++@Entity(
++    tableName = "learning_state",
++    primaryKeys = ["scopeKey", "component"],
++    indices = [Index(value = ["knowledgeVersion"])]
++)
++data class LearningStateEntity(
++    val scopeKey: String,
++    val component: LearningComponent,
++    val knowledgeVersion: Long,
++    val parametersJson: String,
++    val sampleCount: Long,
++    val verifiedSampleCount: Long,
++    val calibrationError: Double?,
++    val updatedUtc: Long
++) {
++    init {
++        require(sampleCount >= 0) { "sampleCount must be non-negative" }
++        require(verifiedSampleCount >= 0 && verifiedSampleCount <= sampleCount) {
++            "verifiedSampleCount must be in [0,sampleCount]"
++        }
++        requireNullableUnitScore("calibrationError", calibrationError)
++    }
++}
++
++private fun requireUnitScore(name: String, score: Double) {
++    require(score.isFinite() && score in 0.0..1.0) { "$name must be finite and in [0,1]" }
++}
++
++private fun requireNullableUnitScore(name: String, score: Double?) {
++    if (score != null) requireUnitScore(name, score)
++}
+diff --git a/app/src/main/java/dk/ruko/lauritz/data/intelligence/entities/MarkReferenceEntities.kt b/app/src/main/java/dk/ruko/lauritz/data/intelligence/entities/MarkReferenceEntities.kt
+new file mode 100644
+index 0000000..5152bc5
+--- /dev/null
++++ b/app/src/main/java/dk/ruko/lauritz/data/intelligence/entities/MarkReferenceEntities.kt
+@@ -0,0 +1,84 @@
++package dk.ruko.lauritz.data.intelligence.entities
++
++import androidx.room.Entity
++import androidx.room.Index
++import androidx.room.PrimaryKey
++import dk.ruko.lauritz.intelligence.model.MarkKind
++import dk.ruko.lauritz.intelligence.model.ReferenceClassLabel
++import dk.ruko.lauritz.intelligence.model.ReferenceReviewStatus
++import dk.ruko.lauritz.intelligence.model.ReferenceScope
++import dk.ruko.lauritz.intelligence.model.ReferenceSourceKind
++import dk.ruko.lauritz.intelligence.model.ReferenceType
++import dk.ruko.lauritz.intelligence.model.RegionSelectionSource
++
++@Entity(
++    tableName = "mark_regions",
++    indices = [
++        Index(value = ["datasetId", "lotId"]),
++        Index(value = ["sourceImageSha256"]),
++        Index(value = ["markKind"])
++    ]
++)
++data class MarkRegionEntity(
++    @PrimaryKey(autoGenerate = true) val id: Long = 0,
++    val datasetId: String,
++    val lotId: String,
++    val imageStableId: String,
++    val sourceImageSha256: String,
++    val left: Double,
++    val top: Double,
++    val right: Double,
++    val bottom: Double,
++    val markKind: MarkKind,
++    val selectionSource: RegionSelectionSource,
++    val detectorVersion: String,
++    val createdUtc: Long
++) {
++    init {
++        requireUnitCoordinate("left", left)
++        requireUnitCoordinate("top", top)
++        requireUnitCoordinate("right", right)
++        requireUnitCoordinate("bottom", bottom)
++        require(left < right) { "left must be less than right" }
++        require(top < bottom) { "top must be less than bottom" }
++    }
++}
++
++@Entity(
++    tableName = "reference_entries",
++    indices = [
++        Index(value = ["scope", "datasetId", "referenceType"]),
++        Index(value = ["reviewStatus", "classLabel"]),
++        Index(value = ["inputSha256"]),
++        Index(value = ["featureVectorId"]),
++        Index(value = ["independenceGroupKey"])
++    ]
++)
++data class ReferenceEntryEntity(
++    @PrimaryKey(autoGenerate = true) val id: Long = 0,
++    val scope: ReferenceScope,
++    val datasetId: String?,
++    val referenceType: ReferenceType,
++    val subjectId: String,
++    val classLabel: ReferenceClassLabel,
++    val reviewStatus: ReferenceReviewStatus,
++    val sourceKind: ReferenceSourceKind,
++    val sourceRef: String,
++    val inputSha256: String,
++    val featureVectorId: Long,
++    val independenceGroupKey: String,
++    val createdUtc: Long,
++    val verifiedUtc: Long?,
++    val analystNote: String?
++) {
++    init {
++        require(scope != ReferenceScope.DATASET || datasetId != null) { "dataset-scoped reference requires datasetId" }
++        require(reviewStatus != ReferenceReviewStatus.ANALYST_VERIFIED || verifiedUtc != null) {
++            "verified reference requires verifiedUtc"
++        }
++    }
++}
++
++private fun requireUnitCoordinate(name: String, value: Double) {
++    require(value.isFinite() && value in 0.0..1.0) { "$name must be finite and in [0,1]" }
++}
+diff --git a/app/src/main/java/dk/ruko/lauritz/data/intelligence/entities/RunEntities.kt b/app/src/main/java/dk/ruko/lauritz/data/intelligence/entities/RunEntities.kt
+new file mode 100644
+index 0000000..0a2d185
+--- /dev/null
++++ b/app/src/main/java/dk/ruko/lauritz/data/intelligence/entities/RunEntities.kt
+@@ -0,0 +1,71 @@
++package dk.ruko.lauritz.data.intelligence.entities
++
++import androidx.room.Entity
++import androidx.room.Index
++import androidx.room.PrimaryKey
++import dk.ruko.lauritz.intelligence.model.AnalysisRunStatus
++import dk.ruko.lauritz.intelligence.model.AnalysisRunType
++import dk.ruko.lauritz.intelligence.model.ExecutionLocation
++
++@Entity(tableName = "dataset_knowledge")
++data class DatasetKnowledgeEntity(
++    @PrimaryKey val datasetId: String,
++    val sourceTreeUri: String?,
++    val createdUtc: Long,
++    val updatedUtc: Long,
++    val activeKnowledgeVersion: Long,
++    val lastIndexedLotId: String?,
++    val indexState: String
++)
++
++@Entity(
++    tableName = "model_registry",
++    indices = [Index(value = ["component", "version"])]
++)
++data class ModelRegistryEntryEntity(
++    @PrimaryKey val modelId: String,
++    val component: String,
++    val version: String,
++    val implementationHash: String,
++    val providerId: String?,
++    val executionLocation: ExecutionLocation,
++    val createdUtc: Long
++)
++
++@Entity(
++    tableName = "analysis_runs",
++    indices = [
++        Index(value = ["datasetId", "startedUtc"]),
++        Index(value = ["datasetId", "status"]),
++        Index(value = ["knowledgeVersion"])
++    ]
++)
++data class AnalysisRunEntity(
++    @PrimaryKey(autoGenerate = true) val id: Long = 0,
++    val datasetId: String,
++    val runType: AnalysisRunType,
++    val startedUtc: Long,
++    val finishedUtc: Long?,
++    val status: AnalysisRunStatus,
++    val knowledgeVersion: Long,
++    val modelManifestJson: String,
++    val configJson: String,
++    val inputSetHash: String,
++    val checkpointJson: String?,
++    val errorCode: String?,
++    val errorMessage: String?
++)
++
++@Entity(
++    tableName = "knowledge_snapshots",
++    primaryKeys = ["datasetId", "knowledgeVersion"],
++    indices = [Index(value = ["datasetId", "createdUtc"])]
++)
++data class KnowledgeSnapshotEntity(
++    val datasetId: String,
++    val knowledgeVersion: Long,
++    val parentVersion: Long?,
++    val triggerComparisonId: Long?,
++    val summaryJson: String,
++    val createdUtc: Long
++)
+diff --git a/app/src/main/java/dk/ruko/lauritz/intelligence/model/IntelligenceJson.kt b/app/src/main/java/dk/ruko/lauritz/intelligence/model/IntelligenceJson.kt
+new file mode 100644
+index 0000000..ab1b970
+--- /dev/null
++++ b/app/src/main/java/dk/ruko/lauritz/intelligence/model/IntelligenceJson.kt
+@@ -0,0 +1,22 @@
++package dk.ruko.lauritz.intelligence.model
++
++import kotlinx.serialization.json.Json
++import kotlinx.serialization.json.JsonElement
++import kotlinx.serialization.json.JsonObject
++import java.security.MessageDigest
++
++object IntelligenceJson {
++    val codec = Json {
++        encodeDefaults = true
++        explicitNulls = true
++        ignoreUnknownKeys = false
++        prettyPrint = false
++    }
++
++    fun canonicalObject(values: Map<String, JsonElement>): String =
++        JsonObject(values.toSortedMap()).toString()
++
++    fun sha256Utf8(value: String): String = MessageDigest.getInstance("SHA-256")
++        .digest(value.toByteArray(Charsets.UTF_8))
++        .joinToString("") { "%02x".format(it) }
++}
+diff --git a/app/src/main/java/dk/ruko/lauritz/intelligence/model/IntelligenceTypes.kt b/app/src/main/java/dk/ruko/lauritz/intelligence/model/IntelligenceTypes.kt
+new file mode 100644
+index 0000000..de98386
+--- /dev/null
++++ b/app/src/main/java/dk/ruko/lauritz/intelligence/model/IntelligenceTypes.kt
+@@ -0,0 +1,104 @@
++package dk.ruko.lauritz.intelligence.model
++
++import kotlinx.serialization.Serializable
++
++@Serializable enum class ExecutionLocation { LOCAL, CLOUD }
++@Serializable enum class AnalysisRunType { INDEX, COMPARE, MARK_SCAN, RELISTING_SCAN, REANALYSIS, CLOUD_ANALYSIS }
++@Serializable enum class AnalysisRunStatus { QUEUED, RUNNING, COMPLETE, FAILED, CANCELLED }
++@Serializable enum class FeatureSubjectType { LOT, IMAGE, MARK_REGION, OBJECT }
++@Serializable enum class FeatureKind { VISUAL, MARK, METADATA, RELATIONSHIP }
++@Serializable enum class SimilarityEdgeType { OBJECT_SIMILARITY, IMAGE_REUSE, MARK_SIMILARITY, RELISTING }
++@Serializable enum class ClusterType { OBJECT, IMAGE, MARK, RELISTING, PATTERN }
++@Serializable enum class MarkKind { STAMP, SIGNATURE, LABEL, SERIAL, ENGRAVING, CASTING_MARK, OTHER }
++@Serializable enum class RegionSelectionSource { AUTO, MANUAL, AUTO_EDITED }
++@Serializable enum class ReferenceScope { DATASET, GLOBAL }
++@Serializable enum class ReferenceType { OBJECT, MARK }
++@Serializable enum class ReferenceClassLabel { AUTHENTIC, FAKE, KNOWN_VARIANT, UNKNOWN }
++@Serializable enum class ReferenceReviewStatus { AI_CANDIDATE, ANALYST_REVIEWED, ANALYST_VERIFIED }
++@Serializable enum class ReferenceSourceKind { EVIDENCE, ANALYST_DERIVED_WEB, ANALYST_DERIVED_LOCAL, AI_DERIVED }
++@Serializable enum class AiConclusionClass { LIKELY_AUTHENTIC, LIKELY_FAKE, INCONCLUSIVE }
++@Serializable enum class AnalystConclusionStatus { UNREVIEWED, CONFIRMED, REJECTED, CORRECTED }
++@Serializable enum class FeedbackActionType {
++    OPEN, SAVE, COMPARE, RELEVANT, NOT_RELEVANT, VERIFY_AUTHENTIC, VERIFY_FAKE,
++    REJECT_CONCLUSION, PROMOTE_REFERENCE, DEMOTE_REFERENCE
++}
++@Serializable enum class LearningComponent { AUTHENTICITY, RELEVANCE, CLUSTERING, ANOMALY }
++@Serializable enum class OsintLeadType {
++    MARK_SEARCH, IMAGE_HISTORY, RELISTING_SEARCH, ENTITY_SEARCH, PROVENANCE_SEARCH, MANUFACTURER_SEARCH
++}
++@Serializable enum class OsintLeadStatus { SUGGESTED, DISMISSED, STARTED, COMPLETE }
++@Serializable enum class DisclosureMode { CROP_ONLY, FULL_IMAGE, METADATA_ONLY }
++@Serializable enum class WatchPatternType { MARK, OBJECT, METADATA, RELATIONSHIP, RELISTING }
++
++@Serializable
++data class ComparisonDraft(
++    val datasetId: String,
++    val subjectAType: FeatureSubjectType,
++    val subjectAId: String,
++    val subjectBType: FeatureSubjectType,
++    val subjectBId: String,
++    val similarityScore: Double,
++    val visualScore: Double?,
++    val markScore: Double?,
++    val metadataScore: Double?,
++    val relationshipScore: Double?,
++    val reasonJson: String,
++    val analysisRunId: Long
++) {
++    init {
++        requireUnitScore("similarityScore", similarityScore)
++        requireNullableUnitScore("visualScore", visualScore)
++        requireNullableUnitScore("markScore", markScore)
++        requireNullableUnitScore("metadataScore", metadataScore)
++        requireNullableUnitScore("relationshipScore", relationshipScore)
++    }
++}
++
++@Serializable
++data class ConclusionDraft(
++    val datasetId: String,
++    val lotId: String,
++    val analysisRunId: Long,
++    val conclusion: AiConclusionClass,
++    val fakeProbability: Double,
++    val confidence: Double,
++    val evidenceQuality: Double,
++    val anomalyScore: Double,
++    val relistingProbability: Double?,
++    val explanationJson: String,
++    val referenceIdsJson: String,
++    val supersedesConclusionId: Long?
++) {
++    init {
++        requireUnitScore("fakeProbability", fakeProbability)
++        requireUnitScore("confidence", confidence)
++        requireUnitScore("evidenceQuality", evidenceQuality)
++        requireUnitScore("anomalyScore", anomalyScore)
++        requireNullableUnitScore("relistingProbability", relistingProbability)
++    }
++}
++
++@Serializable
++data class KnowledgeAdvance(
++    val comparisonId: Long,
++    val beforeVersion: Long,
++    val afterVersion: Long
++)
++
++@Serializable
++data class ModelManifestEntry(
++    val modelId: String,
++    val component: String,
++    val version: String,
++    val implementationHash: String,
++    val providerId: String?,
++    val executionLocation: ExecutionLocation
++)
++
++private fun requireUnitScore(name: String, score: Double) {
++    require(score.isFinite() && score in 0.0..1.0) { "$name must be finite and in [0,1]" }
++}
++
++private fun requireNullableUnitScore(name: String, score: Double?) {
++    if (score != null) requireUnitScore(name, score)
++}
+diff --git a/app/src/test/java/dk/ruko/lauritz/data/intelligence/ConclusionHistoryPolicyTest.kt b/app/src/test/java/dk/ruko/lauritz/data/intelligence/ConclusionHistoryPolicyTest.kt
+new file mode 100644
+index 0000000..b252ac8
+--- /dev/null
++++ b/app/src/test/java/dk/ruko/lauritz/data/intelligence/ConclusionHistoryPolicyTest.kt
+@@ -0,0 +1,43 @@
++package dk.ruko.lauritz.data.intelligence
++
++import dk.ruko.lauritz.intelligence.model.AiConclusionClass
++import dk.ruko.lauritz.intelligence.model.AnalystConclusionStatus
++import dk.ruko.lauritz.intelligence.model.ConclusionDraft
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertTrue
++import org.junit.Test
++
++class ConclusionHistoryPolicyTest {
++    @Test
++    fun aiConclusionVocabularyIsFixed() {
++        assertEquals(
++            setOf("LIKELY_AUTHENTIC", "LIKELY_FAKE", "INCONCLUSIVE"),
++            AiConclusionClass.entries.map { it.name }.toSet()
++        )
++    }
++
++    @Test
++    fun analystStatusIsSeparateFromAiClass() {
++        assertTrue("CONFIRMED" in AnalystConclusionStatus.entries.map { it.name })
++        assertFalse("CONFIRMED" in AiConclusionClass.entries.map { it.name })
++    }
++
++    @Test(expected = IllegalArgumentException::class)
++    fun conclusionDraftRejectsConfidenceAboveOne() {
++        ConclusionDraft(
++            datasetId = "dataset",
++            lotId = "lot",
++            analysisRunId = 1L,
++            conclusion = AiConclusionClass.INCONCLUSIVE,
++            fakeProbability = 0.5,
++            confidence = 1.01,
++            evidenceQuality = 0.5,
++            anomalyScore = 0.5,
++            relistingProbability = null,
++            explanationJson = "{}",
++            referenceIdsJson = "[]",
++            supersedesConclusionId = null
++        )
++    }
++}
+diff --git a/app/src/test/java/dk/ruko/lauritz/data/intelligence/DatabaseIdentityTest.kt b/app/src/test/java/dk/ruko/lauritz/data/intelligence/DatabaseIdentityTest.kt
+new file mode 100644
+index 0000000..72e7ba4
+--- /dev/null
++++ b/app/src/test/java/dk/ruko/lauritz/data/intelligence/DatabaseIdentityTest.kt
+@@ -0,0 +1,15 @@
++package dk.ruko.lauritz.data.intelligence
++
++import dk.ruko.lauritz.data.analyst.AnalystDatabase
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertNotEquals
++import org.junit.Test
++
++class DatabaseIdentityTest {
++    @Test
++    fun analystAndIntelligenceDatabasesArePhysicallyNamedSeparately() {
++        assertEquals("analyst.sqlite", AnalystDatabase.NAME)
++        assertEquals("intelligence.sqlite", IntelligenceDatabase.NAME)
++        assertNotEquals(AnalystDatabase.NAME, IntelligenceDatabase.NAME)
++    }
++}
+diff --git a/app/src/test/java/dk/ruko/lauritz/intelligence/model/IntelligenceJsonTest.kt b/app/src/test/java/dk/ruko/lauritz/intelligence/model/IntelligenceJsonTest.kt
+new file mode 100644
+index 0000000..0ec4a62
+--- /dev/null
++++ b/app/src/test/java/dk/ruko/lauritz/intelligence/model/IntelligenceJsonTest.kt
+@@ -0,0 +1,24 @@
++package dk.ruko.lauritz.intelligence.model
++
++import kotlinx.serialization.json.JsonPrimitive
++import org.junit.Assert.assertEquals
++import org.junit.Test
++
++class IntelligenceJsonTest {
++    @Test
++    fun canonicalObjectSortsKeys() {
++        val encoded = IntelligenceJson.canonicalObject(
++            mapOf("z" to JsonPrimitive(2), "a" to JsonPrimitive("x"))
++        )
++
++        assertEquals("{\"a\":\"x\",\"z\":2}", encoded)
++    }
++
++    @Test
++    fun canonicalHashIsStable() {
++        assertEquals(
++            IntelligenceJson.sha256Utf8("{\"a\":1}"),
++            IntelligenceJson.sha256Utf8("{\"a\":1}")
++        )
++    }
++}
+diff --git a/build.gradle.kts b/build.gradle.kts
+index ea3ef1a..9b9c564 100644
+--- a/build.gradle.kts
++++ b/build.gradle.kts
+@@ -3,4 +3,5 @@ plugins {
+     id("org.jetbrains.kotlin.android") version "2.2.10" apply false
+     id("org.jetbrains.kotlin.plugin.compose") version "2.2.10" apply false
+     id("org.jetbrains.kotlin.kapt") version "2.2.10" apply false
++    id("org.jetbrains.kotlin.plugin.serialization") version "2.2.10" apply false
+ }

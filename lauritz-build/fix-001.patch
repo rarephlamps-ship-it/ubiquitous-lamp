@@ -1,0 +1,12 @@
+diff --git a/app/src/main/java/dk/ruko/lauritz/ui/navigation/AppNavigation.kt b/app/src/main/java/dk/ruko/lauritz/ui/navigation/AppNavigation.kt
+index 7e4679e..e2d5d78 100644
+--- a/app/src/main/java/dk/ruko/lauritz/ui/navigation/AppNavigation.kt
++++ b/app/src/main/java/dk/ruko/lauritz/ui/navigation/AppNavigation.kt
+@@ -6,6 +6,7 @@ import androidx.compose.material.icons.outlined.*
+ import androidx.compose.material3.*
+ import androidx.compose.runtime.*
+ import androidx.compose.ui.Modifier
++import androidx.compose.ui.unit.dp
+ import androidx.lifecycle.viewmodel.compose.viewModel
+ import androidx.navigation.NavGraph.Companion.findStartDestination
+ import androidx.navigation.compose.*

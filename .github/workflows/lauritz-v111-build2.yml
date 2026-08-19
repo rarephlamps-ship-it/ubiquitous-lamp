@@ -1,0 +1,125 @@
+name: Build Lauritz Forensic Explorer v1.1.1 APK
+
+on:
+  push:
+    branches: [lauritz-v111-build2]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Verify source, test, lint and build v1.1.1 APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct verified v1.1 source and apply v1.1.1 patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat lauritz-build/source.part00.b64 lauritz-build/source.part01.b64 lauritz-build/source.part02.b64 lauritz-build/source.part03.b64 > lauritz-build/source.b64
+          base64 --decode lauritz-build/source.b64 > lauritz-build-src.tar.xz
+          echo "d01cbddb6e3a7f45a9ebb2a79e2ff1de285b89c09a71261ac4a2177a2d35e9e0  lauritz-build-src.tar.xz" | sha256sum -c -
+          echo "cb94ee5db7defb38406ffefd1fea52c896b9fdec1a829bcd48dd435f67c437db  lauritz-build/fix-001.patch" | sha256sum -c -
+          echo "cfe1666f23b799f5e7947315fa7dbd4fed0960b6b7bd9f4f0ded235a0215f465  lauritz-build/fix-v11-001.patch" | sha256sum -c -
+          base64 --decode lauritz-build/v11.patch.xz.b64 > v11.patch.xz
+          echo "73f015276c11fba3bdb2cbc37827977f5ec251e17fcfb787bb525a819046c40b  v11.patch.xz" | sha256sum -c -
+          base64 --decode lauritz-build/v111.patch.xz.b64 > v111.patch.xz
+          echo "bdb825e2892644e3b4118736fa06a3f44a700d49c7cef2ce47aa7716e6ecc5d6  v111.patch.xz" | sha256sum -c -
+          xz -dc v11.patch.xz > v11.patch
+          xz -dc v111.patch.xz > v111.patch
+          rm -rf lauritz-app && mkdir lauritz-app
+          tar -xJf lauritz-build-src.tar.xz -C lauritz-app
+          patch -d lauritz-app -p1 < lauritz-build/fix-001.patch
+          patch -d lauritz-app -p1 --batch < v11.patch || true
+          patch -d lauritz-app -p1 < lauritz-build/fix-v11-001.patch
+          grep -q 'versionName = "1.1.0"' lauritz-app/app/build.gradle.kts
+          grep -q 'versionCode = 2' lauritz-app/app/build.gradle.kts
+          patch -d lauritz-app -p1 < v111.patch
+          grep -q 'versionName = "1.1.1"' lauritz-app/app/build.gradle.kts
+          grep -q 'versionCode = 3' lauritz-app/app/build.gradle.kts
+          grep -q 'android.permission.INTERNET' lauritz-app/app/src/main/AndroidManifest.xml
+          test -f lauritz-app/app/src/main/java/dk/ruko/lauritz/data/case/CaseFolderResolver.kt
+          test -f lauritz-app/app/src/main/java/dk/ruko/lauritz/ui/webcompare/WebCompareScreen.kt
+          test -f lauritz-app/app/src/main/java/dk/ruko/lauritz/osint/ProviderRegistry.kt
+
+      - name: Use preinstalled Java 17
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${JAVA_HOME_17_X64:-}"
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_17_X64/bin" >> "$GITHUB_PATH"
+          "$JAVA_HOME_17_X64/bin/java" -version
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;35.0.0"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Unit tests
+        working-directory: lauritz-app
+        run: gradle --no-daemon --stacktrace testDebugUnitTest
+
+      - name: Android lint
+        working-directory: lauritz-app
+        run: gradle --no-daemon --stacktrace lintDebug
+
+      - name: Build debug APK
+        working-directory: lauritz-app
+        run: gradle --no-daemon --stacktrace assembleDebug
+
+      - name: Verify package, permissions, alignment and signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="lauritz-app/app/build/outputs/apk/debug/app-debug.apk"
+          BT="$ANDROID_HOME/build-tools/35.0.0"
+          test -s "$APK"
+          "$BT/zipalign" -c -P 16 -v 4 "$APK"
+          "$BT/apksigner" verify --verbose --print-certs "$APK" | tee apk-signature.txt
+          "$BT/aapt" dump badging "$APK" | tee apk-badging.txt
+          "$BT/aapt" dump permissions "$APK" | tee apk-permissions.txt
+          grep -q "package: name='dk.ruko.lauritz'" apk-badging.txt
+          grep -q "versionCode='3'" apk-badging.txt
+          grep -q "versionName='1.1.1'" apk-badging.txt
+          grep -q "sdkVersion:'29'" apk-badging.txt
+          grep -q "targetSdkVersion:'36'" apk-badging.txt
+          grep -q "android.permission.INTERNET" apk-permissions.txt
+          ! grep -Eq "READ_EXTERNAL_STORAGE|WRITE_EXTERNAL_STORAGE|MANAGE_EXTERNAL_STORAGE" apk-permissions.txt
+          mkdir -p dist
+          cp "$APK" dist/Lauritz-Forensic-Explorer-v1.1.1-debug.apk
+          sha256sum dist/Lauritz-Forensic-Explorer-v1.1.1-debug.apk > dist/Lauritz-Forensic-Explorer-v1.1.1-debug.apk.sha256
+          cat dist/Lauritz-Forensic-Explorer-v1.1.1-debug.apk.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Lauritz-Forensic-Explorer-v1.1.1-APK
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Lauritz-Forensic-Explorer-v1.1.1-Diagnostics
+          path: |
+            apk-signature.txt
+            apk-badging.txt
+            apk-permissions.txt
+            lauritz-app/app/build/reports/tests/
+            lauritz-app/app/build/test-results/
+            lauritz-app/app/build/reports/lint-results-debug.*
+          if-no-files-found: warn
+          retention-days: 14

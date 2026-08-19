@@ -1,0 +1,172 @@
+name: Recover and verify Lauritz v1.3 task3 green
+
+on:
+  push:
+    branches: [lauritz-v13-task3-green-staging]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  recover-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout recovery branch
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Reconstruct verified base and apply v1.3 task3 patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf lauritz-app recovery
+          mkdir -p lauritz-app recovery
+
+          cat lauritz-build/source.part00.b64 \
+              lauritz-build/source.part01.b64 \
+              lauritz-build/source.part02.b64 \
+              lauritz-build/source.part03.b64 > /tmp/lauritz-base.b64
+          base64 --decode /tmp/lauritz-base.b64 > /tmp/lauritz-base.tar.xz
+          echo "d01cbddb6e3a7f45a9ebb2a79e2ff1de285b89c09a71261ac4a2177a2d35e9e0  /tmp/lauritz-base.tar.xz" | sha256sum -c -
+          echo "cb94ee5db7defb38406ffefd1fea52c896b9fdec1a829bcd48dd435f67c437db  lauritz-build/fix-001.patch" | sha256sum -c -
+          echo "cfe1666f23b799f5e7947315fa7dbd4fed0960b6b7bd9f4f0ded235a0215f465  lauritz-build/fix-v11-001.patch" | sha256sum -c -
+          test "$(git hash-object lauritz-build/v13.patch)" = "6ae95e57356cceef2f68dc48f42a9f9082b80601"
+
+          base64 --decode lauritz-build/v11.patch.xz.b64 > /tmp/v11.patch.xz
+          echo "73f015276c11fba3bdb2cbc37827977f5ec251e17fcfb787bb525a819046c40b  /tmp/v11.patch.xz" | sha256sum -c -
+          cat lauritz-build/v12.part00.b64 \
+              lauritz-build/v12.part01.b64 \
+              lauritz-build/v12.part02.b64 \
+              lauritz-build/v12.part03.b64 > /tmp/v12.patch.xz.b64
+          base64 --decode /tmp/v12.patch.xz.b64 > /tmp/v12.patch.xz
+          echo "b2dd7a8dd049066613487f5828f28516787c731724580d6ae4f423a99a06dc23  /tmp/v12.patch.xz" | sha256sum -c -
+
+          xz -dc /tmp/v11.patch.xz > /tmp/v11.patch
+          xz -dc /tmp/v12.patch.xz > /tmp/v12.patch
+          awk 'BEGIN{skip=0} /^diff --git a\/README.md b\/README.md/{skip=1; next} /^diff --git /{if(skip){skip=0}} !skip{print}' /tmp/v12.patch > /tmp/v12-app.patch
+          ! grep -q '^diff --git a/README.md b/README.md' /tmp/v12-app.patch
+
+          tar -xJf /tmp/lauritz-base.tar.xz -C lauritz-app
+          patch -d lauritz-app -p1 < lauritz-build/fix-001.patch
+          patch -d lauritz-app -p1 --batch < /tmp/v11.patch || true
+          patch -d lauritz-app -p1 < lauritz-build/fix-v11-001.patch
+          patch -d lauritz-app -p1 < /tmp/v12-app.patch
+          patch -d lauritz-app -p1 < lauritz-build/v13.patch
+
+          grep -q 'applicationId = "dk.ruko.lauritz"' lauritz-app/app/build.gradle.kts
+          grep -q 'compileSdk = 36' lauritz-app/app/build.gradle.kts
+          grep -q 'minSdk = 29' lauritz-app/app/build.gradle.kts
+          grep -q 'targetSdk = 36' lauritz-app/app/build.gradle.kts
+          grep -q 'lot_attributes' lauritz-app/app/src/main/java/dk/ruko/lauritz/data/evidence/LauritzSchema.kt
+          test -f lauritz-app/app/src/main/java/dk/ruko/lauritz/data/intelligence/IntelligenceDatabase.kt
+          test -f lauritz-app/app/src/main/java/dk/ruko/lauritz/data/intelligence/IntelligenceDaos.kt
+          test -f lauritz-app/app/src/main/java/dk/ruko/lauritz/data/visual/VisualImageResolver.kt
+          test -f lauritz-app/app/src/main/java/dk/ruko/lauritz/ui/image/ImageViewerScreen.kt
+
+      - name: Package recovered task3-green source
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
+              -cJf recovery/Lauritz-v1.3-task3-green-recovered-source.tar.xz -C lauritz-app .
+          sha256sum recovery/Lauritz-v1.3-task3-green-recovered-source.tar.xz \
+            | tee recovery/Lauritz-v1.3-task3-green-recovered-source.tar.xz.sha256
+          {
+            echo "classification=RECOVERED_INTERMEDIATE_SOURCE"
+            echo "not_original_v1.3.1_zip=true"
+            echo "source_branch=${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+            echo "source_commit=$(git rev-parse HEAD)"
+            echo "v13_patch_git_blob=$(git hash-object lauritz-build/v13.patch)"
+            echo "v13_patch_sha256=$(sha256sum lauritz-build/v13.patch | awk '{print $1}')"
+            grep -E 'applicationId|compileSdk|minSdk|targetSdk|versionCode|versionName' lauritz-app/app/build.gradle.kts || true
+          } | tee recovery/recovery-provenance.txt
+
+      - name: Upload recovered source before Android build
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: Lauritz-v1.3-task3-green-recovered-source-${{ github.run_number }}
+          path: recovery/
+          if-no-files-found: error
+          retention-days: 2
+
+      - name: Use preinstalled Java 17
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${JAVA_HOME_17_X64:-}"
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_17_X64/bin" >> "$GITHUB_PATH"
+          "$JAVA_HOME_17_X64/bin/java" -version
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
+
+      - name: Install Android API 36
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Setup Gradle 8.13
+        uses: gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4.4.4
+        with:
+          gradle-version: '8.13'
+          cache-read-only: true
+
+      - name: Unit tests, lint and build
+        working-directory: lauritz-app
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle --no-daemon --stacktrace testDebugUnitTest lintDebug assembleDebug
+
+      - name: Verify APK and publish recovery build
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=lauritz-app/app/build/outputs/apk/debug/app-debug.apk
+          BT="$ANDROID_HOME/build-tools/36.0.0"
+          test -s "$APK"
+          "$BT/aapt" dump badging "$APK" | tee recovery/apk-badging.txt
+          "$BT/aapt" dump permissions "$APK" | tee recovery/apk-permissions.txt
+          "$BT/zipalign" -c -P 16 -v 4 "$APK" | tee recovery/zipalign.txt
+          "$BT/apksigner" verify --verbose --print-certs "$APK" | tee recovery/apksigner.txt
+          grep -q "package: name='dk.ruko.lauritz'" recovery/apk-badging.txt
+          grep -q "sdkVersion:'29'" recovery/apk-badging.txt
+          grep -q "targetSdkVersion:'36'" recovery/apk-badging.txt
+          ! grep -Eq "READ_EXTERNAL_STORAGE|WRITE_EXTERNAL_STORAGE|MANAGE_EXTERNAL_STORAGE" recovery/apk-permissions.txt
+          cp "$APK" recovery/Lauritz-v1.3-task3-green-recovery-debug.apk
+          sha256sum recovery/Lauritz-v1.3-task3-green-recovery-debug.apk \
+            | tee recovery/Lauritz-v1.3-task3-green-recovery-debug.apk.sha256
+
+      - name: Upload verified recovery APK and evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: Lauritz-v1.3-task3-green-recovery-APK-${{ github.run_number }}
+          path: recovery/
+          if-no-files-found: error
+          retention-days: 2
+
+      - name: Record recovery run id and status
+        if: always() && github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > lauritz-build/v13-task3-recovery-result.txt <<EOF
+          run_id=${GITHUB_RUN_ID}
+          run_attempt=${GITHUB_RUN_ATTEMPT}
+          job_status=${{ job.status }}
+          head_sha=${GITHUB_SHA}
+          EOF
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add lauritz-build/v13-task3-recovery-result.txt
+          git commit -m "ci: record v1.3 task3 recovery [skip ci]" || exit 0
+          git push origin HEAD:lauritz-v13-task3-green-staging
