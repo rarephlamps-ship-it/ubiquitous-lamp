@@ -3,6 +3,8 @@ name: Recover and verify Lauritz v1.3 task3 green
 on:
   push:
     branches: [lauritz-v13-task3-green-staging]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -15,6 +17,9 @@ jobs:
     steps:
       - name: Checkout recovery branch
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
 
       - name: Reconstruct verified base and apply v1.3 task3 patch
         shell: bash
@@ -75,8 +80,8 @@ jobs:
           {
             echo "classification=RECOVERED_INTERMEDIATE_SOURCE"
             echo "not_original_v1.3.1_zip=true"
-            echo "source_branch=${GITHUB_REF_NAME}"
-            echo "source_commit=${GITHUB_SHA}"
+            echo "source_branch=${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+            echo "source_commit=$(git rev-parse HEAD)"
             echo "v13_patch_git_blob=$(git hash-object lauritz-build/v13.patch)"
             echo "v13_patch_sha256=$(sha256sum lauritz-build/v13.patch | awk '{print $1}')"
             grep -E 'applicationId|compileSdk|minSdk|targetSdk|versionCode|versionName' lauritz-app/app/build.gradle.kts || true
@@ -150,7 +155,7 @@ jobs:
           retention-days: 2
 
       - name: Record recovery run id and status
-        if: always()
+        if: always() && github.event_name == 'push'
         shell: bash
         run: |
           set -euo pipefail
